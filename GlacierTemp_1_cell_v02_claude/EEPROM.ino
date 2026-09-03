@@ -612,6 +612,31 @@ void ihexRecord(byte type, unsigned int addr, const byte* data, byte len){
 // rather than truncating, which is the right way round for a rescue dump: the
 // surplus is erased flash and is obvious as such. LOGH=n overrides the span
 // with an explicit byte count when even that is not enough.
+// Cabecera de metadatos en UNA linea de campos "clave=valor", para que un cliente
+// automatico configure su decodificador sin adivinar nada.
+//
+// El comando I imprime un bloque pensado para leerlo con los ojos, y una app que
+// tuviera que sacar de ahi el tamano de registro dependeria de como esta redactado.
+// Esta linea es el contrato de maquina y por eso la cubre PROTOCOL_VERSION.
+void printMetadata(){
+  memSendControlByte(POWER_UP);
+  byte id[8];
+  readFlashUniqueID(id);
+  out << F("INFO fw=") << NOSPACER << F(FIRMWARE_VERSION) << NORMALTEXT;
+  out << F("proto=") << NOSPACER << PROTOCOL_VERSION << NORMALTEXT;
+  out << F("id=") << NOSPACER;
+  for(byte i=0;i<8;i++){
+    out << hexDigit(id[i]>>4) << hexDigit(id[i]);
+  }
+  out << NORMALTEXT;
+  out << F("sig="); printHex16(getUInt(LOG_SIGNATURE_ADDR));
+  out << F("rec=") << NOSPACER << (unsigned long)BYTES_PER_SAMPLE << NORMALTEXT;
+  out << F("count=") << NOSPACER << getCount() << NORMALTEXT;
+  out << F("flash=") << NOSPACER << (unsigned long)(SECTOR_SIZE*(MAX_SECTORS+1)) << NORMALTEXT;
+  ln();
+  flashPowerDown();
+}
+
 void displayHistoryHex(unsigned long nBytes){
   memSendControlByte(POWER_UP);
   unsigned long nSamples=getCount();

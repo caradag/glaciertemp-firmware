@@ -748,6 +748,14 @@ bool logFormatMismatch=false;
 #define SLEEP_DELAY 0
 #define WAKEUP_DELAY 0
 
+// Version del firmware y del PROTOCOLO de la consola serie. Son cosas distintas:
+// el firmware cambia con cualquier arreglo, mientras que la version de protocolo
+// solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
+// respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
+// con un protocolo que no entiende, en vez de malinterpretar la respuesta.
+#define FIRMWARE_VERSION "2.1"
+#define PROTOCOL_VERSION 1
+
 #define BAUDRATE 230400
 // Baudrate error calculator. NOTE the clock argument: this board runs at
 // 7.3728 MHz, not the 8 MHz the link used to say. At 8 MHz the table shows
@@ -1142,6 +1150,12 @@ void loop() {
       }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
         // readULong returns 0 for a bare "logh", which selects the default span
         displayHistoryHex(readULong(inputStr));
+      }else if(!strcasecmp("VER", inputStr)){// Version de firmware y de protocolo
+        out << F("fw=") << NOSPACER << F(FIRMWARE_VERSION) << NORMALTEXT
+            << F("proto=") << NOSPACER << PROTOCOL_VERSION << NORMALTEXT;
+        ln();
+      }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina
+        printMetadata();
       }else if(!strcasecmp("ID", inputStr)){// Identificador unico de la placa
         printBoardId();
         ln();
