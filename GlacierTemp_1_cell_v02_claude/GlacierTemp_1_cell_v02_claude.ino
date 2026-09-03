@@ -1142,6 +1142,9 @@ void loop() {
       }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
         // readULong returns 0 for a bare "logh", which selects the default span
         displayHistoryHex(readULong(inputStr));
+      }else if(!strcasecmp("ID", inputStr)){// Identificador unico de la placa
+        printBoardId();
+        ln();
       }else if(!strcasecmp("H", inputStr)){// Prints help
         printHelp();
       }else if(!strncasecmp("XON", inputStr, 3)){// Prints help  

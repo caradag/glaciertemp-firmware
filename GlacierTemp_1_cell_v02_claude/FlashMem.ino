@@ -233,6 +233,42 @@ byte detectSPImemory() {
   return capacity;
 }
 
+// Numero de serie unico de 64 bits del chip de flash (opcode 0x4B, "Read Unique
+// ID"). Winbond lo graba en fabrica y es unico por chip, asi que sirve como
+// identidad estable de la placa: el W25Q64 va soldado y no se sustituye.
+//
+// El ATmega328P no ofrece nada equivalente. El 328PB si lleva un numero de serie
+// documentado, pero el 328P-MU que monta esta placa no: los bytes de su signature
+// row son datos de calibracion y de posicion en la oblea, y Microchip no los
+// garantiza como unicos, de modo que dos chips del mismo lote pueden coincidir.
+//
+// El opcode va seguido de cuatro bytes dummy antes de los ocho de datos.
+void readFlashUniqueID(byte* id8){
+  memSendControlByte(POWER_UP);
+  digitalWrite(FLASH_MEMORY_CS, LOW);
+  SPI.transfer(0x4B);
+  for(byte i=0;i<4;i++){
+    SPI.transfer(0x00);          // dummy
+  }
+  for(byte i=0;i<8;i++){
+    id8[i]=SPI.transfer(0x00);
+  }
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+  flashPowerDown();
+}
+
+// Imprime el identificador como 16 digitos hexadecimales, sin separadores, para
+// que la app pueda tomarlo tal cual.
+void printBoardId(){
+  byte id[8];
+  readFlashUniqueID(id);
+  out << NOSPACER;
+  for(byte i=0;i<8;i++){
+    out << hexDigit(id[i]>>4) << hexDigit(id[i]);
+  }
+  out << NORMALTEXT;
+}
+
 bool flashWriteFloat(uint32_t address, float value) {
     // Create a pointer to a uint8_t, and cast the address of the float to it.
     // This allows us to treat the float's memory as an array of bytes.
