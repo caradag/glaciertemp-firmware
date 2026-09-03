@@ -1147,6 +1147,17 @@ void loop() {
         displayHistory(SHOW_ALL);
       }else if(!strcasecmp("logc", inputStr)){// Same log, compact: no sample number, no spaces
         displayHistory(SHOW_ALL_COMPACT);
+      }else if(!strncasecmp("logb", inputStr, 4)){// Volcado binario; LOGB=a,b para un rango
+        // Sin rango se vuelca el log entero. Con "LOGB=a,b" solo esos registros,
+        // que es el caso habitual: bajar lo nuevo desde la ultima visita.
+        unsigned long a=0, b=0xFFFFFFFFUL;
+        char* eq=strchr(inputStr,'=');
+        if(eq!=NULL){
+          a=strtoul(eq+1,NULL,10);
+          char* comma=strchr(eq,',');
+          b = (comma!=NULL) ? strtoul(comma+1,NULL,10) : a;
+        }
+        dumpLogBinary(a,b);
       }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
         // readULong returns 0 for a bare "logh", which selects the default span
         displayHistoryHex(readULong(inputStr));

@@ -612,6 +612,129 @@ void ihexRecord(byte type, unsigned int addr, const byte* data, byte len){
 // rather than truncating, which is the right way round for a rescue dump: the
 // surplus is erased flash and is obvious as such. LOGH=n overrides the span
 // with an explicit byte count when even that is not enough.
+// ---------------------------------------------------------------------------
+// LOGB: volcado BINARIO del log.
+//
+// Frente a LOGC ahorra un factor 3,4: un registro de 12 bytes ocupa 12 bytes en
+// vez de los ~41 caracteres de la fila CSV. Sobre un enlace BLE lento eso es la
+// diferencia entre una descarga util y una inviable.
+//
+//   texto    LOGB begin sig=0x100F rec=12 from=0 to=99 blocks=5 blocksize=256
+//   bloques  AA 55 <u16 idx LE> <u16 len LE> <len bytes> <u16 crc LE>
+//   texto    LOGB end
+//
+// El CRC va POR BLOQUE, no al final: asi un bloque danado se reintenta pidiendo
+// solo su rango, en vez de repetir la descarga entera. Es tambien lo que detecta
+// a un modulo BLE que anuncia un MTU que luego no sostiene -- el sintoma seria,
+// si no, un CSV con datos corruptos y ningun aviso.
+//
+// El cuerpo se escribe con Serial.write() y NUNCA con el stream out: out trata
+// 0xAD, 0xAF, 0xB2 y 0xB3 como codigos de formato, y los convertiria en espacios
+// o los tragaria en mitad de los datos.
+#define LOGB_BLOCK 256
+#define LOGB_CHUNK 32     // el buffer vive en RAM; el ATmega328P solo tiene 2 kB
+
+// CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF). Barato en un AVR y verificable
+// contra el vector estandar: "123456789" da 0x29B1.
+unsigned int crc16Ccitt(const byte* data, byte len, unsigned int crc){
+  for(byte i=0;i<len;i++){
+    crc ^= ((unsigned int)data[i]) << 8;
+    for(byte b=0;b<8;b++){
+      crc = (crc & 0x8000) ? (unsigned int)((crc<<1) ^ 0x1021) : (unsigned int)(crc<<1);
+    }
+  }
+  return crc;
+}
+
+// Control de flujo por software durante el volcado. Un puente BLE transparente
+// entrega mucho mas despacio de lo que la UART emite a 230400 y se desborda en
+// silencio; con esto el receptor puede frenar la fuente.
+//
+// No confundir con los comandos XON y XOFF del dispatcher, que conmutan un pin de
+// salida: aqui se trata de los bytes de control 0x11 y 0x13 en la linea serie.
+#define FLOW_XOFF 0x13
+#define FLOW_XON  0x11
+void flowControlCheck(){
+  if(!Serial.available()){
+    return;
+  }
+  if(Serial.peek()!=FLOW_XOFF){
+    return;
+  }
+  Serial.read();
+  unsigned long t0=millis();
+  // Con un tope: si el receptor desaparece tras pedir la pausa, el logger no
+  // puede quedarse esperando para siempre y perder la ventana de medicion.
+  while(millis()-t0 < 30000UL){
+    if(Serial.available() && Serial.read()==FLOW_XON){
+      return;
+    }
+  }
+}
+
+void writeU16LE(unsigned int v){
+  Serial.write((byte)(v & 0xFF));
+  Serial.write((byte)(v >> 8));
+}
+
+// Vuelca los registros [fromRec, toRec] inclusive. Un rango vacio se rechaza.
+void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
+  unsigned long nSamples=getCount();
+  if(nSamples==0){
+    out << F("LOGB empty\n");
+    return;
+  }
+  if(toRec>=nSamples){
+    toRec=nSamples-1;
+  }
+  if(fromRec>toRec){
+    out << F("LOGB empty\n");
+    return;
+  }
+
+  memSendControlByte(POWER_UP);
+  byte stride=BYTES_PER_SAMPLE;
+  unsigned long startAddr=fromRec*(unsigned long)stride;
+  unsigned long nBytes=(toRec-fromRec+1)*(unsigned long)stride;
+  unsigned int nBlocks=(unsigned int)((nBytes + LOGB_BLOCK - 1)/LOGB_BLOCK);
+
+  out << F("LOGB begin sig="); printHex16(getUInt(LOG_SIGNATURE_ADDR));
+  out << F("rec=") << NOSPACER << (unsigned long)stride << NORMALTEXT;
+  out << F("from=") << NOSPACER << fromRec << NORMALTEXT;
+  out << F("to=") << NOSPACER << toRec << NORMALTEXT;
+  out << F("blocks=") << NOSPACER << (unsigned long)nBlocks << NORMALTEXT;
+  out << F("blocksize=") << NOSPACER << (unsigned long)LOGB_BLOCK << NORMALTEXT;
+  ln();
+  Serial.flush();
+
+  byte buf[LOGB_CHUNK];
+  for(unsigned int blk=0; blk<nBlocks; blk++){
+    unsigned long blockStart=startAddr + (unsigned long)blk*LOGB_BLOCK;
+    unsigned long left=nBytes - (unsigned long)blk*LOGB_BLOCK;
+    unsigned int blockLen=(left>=LOGB_BLOCK) ? LOGB_BLOCK : (unsigned int)left;
+
+    flowControlCheck();
+    Serial.write(0xAA);
+    Serial.write(0x55);
+    writeU16LE(blk);
+    writeU16LE(blockLen);
+
+    unsigned int crc=0xFFFF;
+    unsigned int done=0;
+    while(done<blockLen){
+      byte n=(blockLen-done >= LOGB_CHUNK) ? LOGB_CHUNK : (byte)(blockLen-done);
+      readBytesFromFlash(blockStart+done, buf, n);
+      Serial.write(buf, n);
+      crc=crc16Ccitt(buf, n, crc);
+      done+=n;
+    }
+    writeU16LE(crc);
+    Serial.flush();
+  }
+  out << F("LOGB end\n");
+  flashPowerDown();
+}
+
 // Cabecera de metadatos en UNA linea de campos "clave=valor", para que un cliente
 // automatico configure su decodificador sin adivinar nada.
 //
