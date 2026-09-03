@@ -698,12 +698,19 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
   unsigned long nBytes=(toRec-fromRec+1)*(unsigned long)stride;
   unsigned int nBlocks=(unsigned int)((nBytes + LOGB_BLOCK - 1)/LOGB_BLOCK);
 
-  out << F("LOGB begin sig="); printHex16(getUInt(LOG_SIGNATURE_ADDR));
-  out << F("rec=") << NOSPACER << (unsigned long)stride << NORMALTEXT;
-  out << F("from=") << NOSPACER << fromRec << NORMALTEXT;
-  out << F("to=") << NOSPACER << toRec << NORMALTEXT;
-  out << F("blocks=") << NOSPACER << (unsigned long)nBlocks << NORMALTEXT;
-  out << F("blocksize=") << NOSPACER << (unsigned long)LOGB_BLOCK << NORMALTEXT;
+  // Los espacios van escritos a mano dentro de los literales. El stream inserta
+  // separadores por su cuenta entre elementos, y con eso la linea sale como
+  // "sig= 0x100Frec= 12": un espacio donde no toca y ninguno donde hace falta.
+  // NOSPACER apaga ese automatismo; printHex16 lo vuelve a encender al terminar,
+  // asi que hay que reponerlo despues de cada llamada.
+  out << NOSPACER << F("LOGB begin sig=");
+  printHex16(getUInt(LOG_SIGNATURE_ADDR));
+  out << NOSPACER << F(" rec=") << (unsigned long)stride;
+  out << F(" from=") << fromRec;
+  out << F(" to=") << toRec;
+  out << F(" blocks=") << (unsigned long)nBlocks;
+  out << F(" blocksize=") << (unsigned long)LOGB_BLOCK;
+  out << NORMALTEXT;
   ln();
   Serial.flush();
 
@@ -722,6 +729,11 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
     unsigned int crc=0xFFFF;
     unsigned int done=0;
     while(done<blockLen){
+      // Atendido en cada trozo y no solo entre bloques: quien pide la pausa lo
+      // hace porque su buffer se esta llenando, y 256 bytes mas de sobrepaso son
+      // justo lo que trata de evitar. Comprobarlo cada 32 cuesta una lectura de
+      // registro.
+      flowControlCheck();
       byte n=(blockLen-done >= LOGB_CHUNK) ? LOGB_CHUNK : (byte)(blockLen-done);
       readBytesFromFlash(blockStart+done, buf, n);
       Serial.write(buf, n);
@@ -745,17 +757,20 @@ void printMetadata(){
   memSendControlByte(POWER_UP);
   byte id[8];
   readFlashUniqueID(id);
-  out << F("INFO fw=") << NOSPACER << F(FIRMWARE_VERSION) << NORMALTEXT;
-  out << F("proto=") << NOSPACER << PROTOCOL_VERSION << NORMALTEXT;
-  out << F("id=") << NOSPACER;
+  // Espaciado explicito, por lo mismo que en dumpLogBinary: el separador
+  // automatico del stream no coincide con lo que un parser espera leer.
+  out << NOSPACER << F("INFO fw=") << F(FIRMWARE_VERSION);
+  out << F(" proto=") << PROTOCOL_VERSION;
+  out << F(" id=");
   for(byte i=0;i<8;i++){
     out << hexDigit(id[i]>>4) << hexDigit(id[i]);
   }
+  out << F(" sig=");
+  printHex16(getUInt(LOG_SIGNATURE_ADDR));
+  out << NOSPACER << F(" rec=") << (unsigned long)BYTES_PER_SAMPLE;
+  out << F(" count=") << getCount();
+  out << F(" flash=") << (unsigned long)(SECTOR_SIZE*(MAX_SECTORS+1));
   out << NORMALTEXT;
-  out << F("sig="); printHex16(getUInt(LOG_SIGNATURE_ADDR));
-  out << F("rec=") << NOSPACER << (unsigned long)BYTES_PER_SAMPLE << NORMALTEXT;
-  out << F("count=") << NOSPACER << getCount() << NORMALTEXT;
-  out << F("flash=") << NOSPACER << (unsigned long)(SECTOR_SIZE*(MAX_SECTORS+1)) << NORMALTEXT;
   ln();
   flashPowerDown();
 }
