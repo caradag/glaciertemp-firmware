@@ -904,7 +904,21 @@ void printHelp(){
       out << NOSPACER << c;
     }
   }
+  printNewCommands();
   displayCommands();
+}
+
+// Los comandos anadidos en esta version se imprimen desde la flash de programa y
+// no desde el texto de ayuda de la EEPROM. El texto de la EEPROM lo escribe el
+// initializer, asi que anadirlos alli obligaria a reinicializar cada placa ya
+// desplegada --y con ello a reescribir sus parametros-- solo para actualizar una
+// pantalla de ayuda. Desde aqui funcionan en las placas que ya estan en terreno.
+void printNewCommands(){
+  out << NOSPACER << F("LOGB[=a,b] Binary log, fast download\n");
+  out << F("ID       Board unique ID\n");
+  out << F("VER      Firmware and protocol version\n");
+  out << F("INFO     Machine-readable header\n");
+  out << NORMALTEXT;
 }
 
 // ######### LOW LEVEL INTERNAL EEPROM READ - WRITE ###############

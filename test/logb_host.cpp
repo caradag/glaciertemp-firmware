@@ -68,6 +68,7 @@ int main(int argc, char** argv){
   uint16_t c = crc16Ccitt((const byte*)v, 9, 0xFFFF);
   fprintf(stderr, "CRC(\"123456789\") = 0x%04X %s\n", c, c==0x29B1 ? "OK" : "FALLA");
 
+  printNewCommands();
   printVersion();
   printMetadata();
   dumpLogBinary(from, to);
