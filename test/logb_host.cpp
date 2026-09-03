@@ -28,11 +28,10 @@ void ln(){ out << NL; }
 // --- entorno simulado de la placa -----------------------------------------
 #define LOG_SIGNATURE_ADDR 179
 #define BYTES_PER_SAMPLE 12
-#define SECTOR_SIZE 4096
-#define MAX_SECTORS 2047
 #define POWER_UP 0xAB
-#define FIRMWARE_VERSION "2.1"
-#define PROTOCOL_VERSION 1
+// SECTOR_SIZE, MAX_SECTORS, FIRMWARE_VERSION y PROTOCOL_VERSION se extraen del
+// sketch: copiarlos aqui haria que el banco aprobara una cabecera que anuncia
+// una version o un tamano de flash que la placa no tiene.
 
 static std::vector<unsigned char> g_flash;
 static uint32_t g_count = 0;
@@ -68,7 +67,6 @@ int main(int argc, char** argv){
   uint16_t c = crc16Ccitt((const byte*)v, 9, 0xFFFF);
   fprintf(stderr, "CRC(\"123456789\") = 0x%04X %s\n", c, c==0x29B1 ? "OK" : "FALLA");
 
-  printNewCommands();
   printVersion();
   printMetadata();
   dumpLogBinary(from, to);
