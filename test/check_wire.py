@@ -35,7 +35,12 @@ def run(count, a, b):
     subprocess.run([str(HERE/"logb_host"), str(count), str(a), str(b), str(out)],
                    check=True, capture_output=True)
     d = out.read_bytes()
-    return d.split(b"\n", 1)[1]           # descarta la cabecera INFO
+    # Descarta las lineas de VER e INFO: el volcado empieza en su propia cabecera,
+    # que siempre precede a cualquier byte binario.
+    i = d.find(b"LOGB begin")
+    if i < 0:
+        i = d.index(b"LOGB empty")
+    return d[i:]
 
 CASES = [
     (100, 0,  99, "log completo, ultimo bloque parcial"),

@@ -1162,9 +1162,7 @@ void loop() {
         // readULong returns 0 for a bare "logh", which selects the default span
         displayHistoryHex(readULong(inputStr));
       }else if(!strcasecmp("VER", inputStr)){// Version de firmware y de protocolo
-        out << F("fw=") << NOSPACER << F(FIRMWARE_VERSION) << NORMALTEXT
-            << F("proto=") << NOSPACER << PROTOCOL_VERSION << NORMALTEXT;
-        ln();
+        printVersion();
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina
         printMetadata();
       }else if(!strcasecmp("ID", inputStr)){// Identificador unico de la placa

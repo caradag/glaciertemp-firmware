@@ -750,6 +750,15 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
 // Cabecera de metadatos en UNA linea de campos "clave=valor", para que un cliente
 // automatico configure su decodificador sin adivinar nada.
 //
+// Version de firmware y de protocolo, sin tocar la memoria flash: es la consulta
+// mas barata que puede hacer una app para decidir si entiende a esta placa.
+void printVersion(){
+  out << NOSPACER << F("fw=") << F(FIRMWARE_VERSION);
+  out << F(" proto=") << PROTOCOL_VERSION;
+  out << NORMALTEXT;
+  ln();
+}
+
 // El comando I imprime un bloque pensado para leerlo con los ojos, y una app que
 // tuviera que sacar de ahi el tamano de registro dependeria de como esta redactado.
 // Esta linea es el contrato de maquina y por eso la cubre PROTOCOL_VERSION.
