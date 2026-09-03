@@ -1,0 +1,14 @@
+# Artefactos de compilacion del Arduino IDE
+build/
+*.hex
+*.eep
+*.elf
+*.lst
+*.map
+*.d
+*.o
+
+# Copias de seguridad y temporales
+*.bak
+*~
+.DS_Store

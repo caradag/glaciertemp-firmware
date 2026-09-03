@@ -1,0 +1,322 @@
+
+byte memReadStatus2(){
+  digitalWrite(FLASH_MEMORY_CS, LOW);
+  SPI.transfer(READ_STATUS_2);
+  byte status = SPI.transfer(0x00);
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+  return status;
+}
+
+// Reports the flash status registers, and warns if anything is protecting them.
+//
+// THIS DELIBERATELY DOES NOT TRY TO CLEAR THE QUAD ENABLE BIT. It used to, and
+// it could not succeed: on this part QE is fixed at 1 by the factory and is not
+// a writable bit. Verified on the bench 2026-08-22 with JEDEC EF 40 17,
+// SR1=0x00 SR2=0x02 SR3=0x60, i.e. no protection of any kind set:
+//
+//   31h (write SR2, one byte)        -> QE unchanged
+//   01h (write SR1+SR2, two bytes)   -> QE unchanged
+//   50h + 31h (volatile)             -> QE unchanged
+//   50h + 01h (volatile)             -> QE unchanged
+//
+// In every case WEL was 1 before the write and 0 afterwards, so the chip
+// accepted and executed the instruction; the bit simply does not change. That
+// is the documented behaviour of the "Quad Enabled" ordering option, for which
+// QE=1 is the factory state.
+//
+// WHAT THAT MEANS FOR THIS BOARD. Pin 3 is permanently IO2 and pin 7 is
+// permanently IO3, and both are tied to a rail: pin 3 to GND (fitted to stop it
+// floating, worth 84uA of sleep current) and pin 7 hard-shorted to VCC. Those
+// pins are inputs at all times EXCEPT during a quad instruction, when the chip
+// drives them -- into a short, in both cases.
+//
+//   *** NEVER ISSUE A QUAD INSTRUCTION TO THIS FLASH. ***
+//
+// Everything here is single-I/O by construction: 03h read, 02h page program,
+// 20h sector erase, 06h write enable, 05h/35h read status, B9h/ABh power. Adding
+// a Fast Read Quad (6Bh/EBh), a Quad Page Program (32h), or enabling QPI (38h)
+// would short an output driver to a rail. This is not a style preference; it is
+// the reason the board survives having those pins tied.
+void flashReportStatus(){
+  byte sr1 = memReadStatus();
+  byte sr2 = memReadStatus2();
+
+  // SRP1 is S8, i.e. SR2 bit 0 -- NOT in SR1 alongside SRP0. Together they say
+  // whether the status register can be written at all:
+  //   (SRP1,SRP0) = (0,0) writable [factory default]
+  //                 (0,1) locked while /WP is low
+  //                 (1,0) power-supply lock-down, until the next power cycle
+  //                 (1,1) one time program, permanent
+  // Neither is expected to be set here; both are reported because a surprise in
+  // either would explain a flash that silently refuses writes.
+  if(sr1 & STATUS1_SRP0){
+    out << F("WARNING: flash SRP0 set\n");
+  }
+  if(sr2 & STATUS2_SRP1){
+    out << F("WARNING: flash SRP1 set, status register locked\n");
+  }
+  if(!(sr2 & STATUS2_QE)){
+    // Would be a genuine surprise: a part whose QE can be, or has been, cleared
+    out << F("Note: flash QE is clear, WP#/HOLD# are live\n");
+  }
+}
+
+// Put the flash into its lowest state and leave its pins in the matching
+// safe position. Two strategies, chosen by SLEEP_FLASH_POWERED.
+//
+// Must be called while SPI is still enabled: it sends 0xB9, and SPI.transfer()
+// with SPE cleared waits forever for a flag that never arrives.
+void flashPowerDown(){
+  memSendControlByte(POWER_DOWN);          // 0xB9, deep power-down, ~1uA typ
+#if SLEEP_FLASH_POWERED
+  // Supply stays on, so nothing can back-feed the chip and CS is free to rest
+  // high -- both ends of R26 at 3.3V, no current through it.
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+#else
+  // Supply removed, so every line into the chip must be held low or it is
+  // powered through its protection diodes instead.
+  digitalWrite(MEM_POWER, LOW);
+  digitalWrite(FLASH_MEMORY_CS, LOW);
+#endif
+}
+
+bool memSendControlByte(byte controlByte){
+    if(controlByte==POWER_UP){
+      digitalWrite(MEM_POWER, HIGH);
+      digitalWrite(FLASH_MEMORY_CS, HIGH);
+      delay(1);
+    }
+
+    digitalWrite(FLASH_MEMORY_CS, LOW);
+    SPI.transfer(controlByte); // Write Enable
+    digitalWrite(FLASH_MEMORY_CS, HIGH);
+
+    if(controlByte==WRITE_ENABLE){
+      if (!(memReadStatus() & 0x02)) { // WEL must be set once WREN has been sent
+        out << F("Flash write-enable failed\n");
+        return false;
+      }
+    }    
+    return true;
+}
+
+// Returns true only if every byte was erased, programmed and confirmed.
+bool writeBytesToFlash(uint32_t address, const byte* data, uint32_t length) {
+  if(checkMemoryOverflow(address+length)){
+    return false;
+  }
+
+  uint16_t startPosInSector=address % SECTOR_SIZE;
+  // Is we are going to write in a new sector, ne erase it first
+  if(startPosInSector == 0){
+    if(!memEraseSector(address/SECTOR_SIZE)) return false;
+  }else if(SECTOR_SIZE<startPosInSector+length){
+    if(!memEraseSector((address/SECTOR_SIZE)+1)) return false;
+  }
+  const uint16_t PAGE_SIZE = 256;
+  while (length > 0) {
+    uint16_t pageOffset = address % PAGE_SIZE;
+    uint16_t spaceInPage = PAGE_SIZE - pageOffset;
+    uint16_t chunkSize = length;
+    if(spaceInPage<chunkSize){
+      chunkSize = spaceInPage;
+    }
+
+    // Write Enable
+    if (!memSendControlByte(WRITE_ENABLE)){
+      return false;
+    }
+
+    memSelectPageAddress(address, WRITE);
+
+    for (uint16_t i = 0; i < chunkSize; i++) {
+      SPI.transfer(data[i]);
+    }
+    digitalWrite(FLASH_MEMORY_CS, HIGH);
+    // Wait for write to complete
+    if (!memWaitUntilReady()) return false;
+
+    // Update pointers
+    address += chunkSize;
+    data += chunkSize;
+    length -= chunkSize;
+  }
+  return true;
+}
+
+void readBytesFromFlash(uint32_t address, byte* buffer, uint32_t length) {
+  memSelectPageAddress(address, READ);
+
+  for (uint32_t i = 0; i < length; i++) {
+    buffer[i] = SPI.transfer(0x00);
+  }
+
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+}
+
+bool checkMemoryOverflow(uint32_t address){
+  if(address>=(SECTOR_SIZE*(MAX_SECTORS+1))){
+    out << F("Memory full\n");
+    return true;
+  }
+  return false;
+}
+void memSelectPageAddress(unsigned long address, byte mode){
+  digitalWrite(FLASH_MEMORY_CS, LOW);
+  SPI.transfer(mode); // Page Program
+
+  byte addr[3] = {
+    (byte)(address >> 16),
+    (byte)(address >> 8),
+    (byte)(address)
+  };
+  SPI.transfer(addr[0]);
+  SPI.transfer(addr[1]);
+  SPI.transfer(addr[2]);
+
+  // This is equivalent to the above, it is shorter but uses the same memory
+  // SPI.transfer((address >> 16) & 0xFF);
+  // SPI.transfer((address >> 8) & 0xFF);
+  // SPI.transfer(address & 0xFF);  
+}
+
+// Old version of the function without time out
+// void memWaitUntilReady() {
+//   while (memReadStatus() & 0x01) {
+//     delay(1); // Wait for WIP bit to clear
+//   }
+// }
+
+bool memWaitUntilReady() {
+  unsigned long start = millis();
+  byte deadBusReads = 0;
+
+  while (millis() - start < FLASH_READY_TIMEOUT) {
+    byte status = memReadStatus();
+
+    if (status == 0xFF) {
+      // MISO stuck high: chip unpowered, deselected or absent.
+      // Require several consecutive reads so a legitimate 0xFF can't trip it.
+      if (++deadBusReads > 5) {
+        out << F("Flash not responding\n");
+        return false;
+      }
+    } else {
+      deadBusReads = 0;
+      if (!(status & 0x01)) return true;   // WIP clear -> done
+    }
+    delay(1);
+  }
+  out << F("Flash timeout\n");
+  return false;
+}
+
+
+byte memReadStatus() {
+  digitalWrite(FLASH_MEMORY_CS, LOW);
+  SPI.transfer(0x05);
+  byte status = SPI.transfer(0x00);
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+  return status;
+}
+
+byte detectSPImemory() {
+  // We read the JEDEC ID (Joint Electron Device Engineering Council)
+  digitalWrite(FLASH_MEMORY_CS, LOW);
+  SPI.transfer(0x9F); // JEDEC ID
+  // byte mfg = SPI.transfer(0x00);
+  // byte memType = SPI.transfer(0x00);
+  SPI.transfer(0x00);
+  SPI.transfer(0x00);
+  byte capacity = intPow(SPI.transfer(0x00),2)/intPow(20,2);
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+  return capacity;
+}
+
+bool flashWriteFloat(uint32_t address, float value) {
+    // Create a pointer to a uint8_t, and cast the address of the float to it.
+    // This allows us to treat the float's memory as an array of bytes.
+    uint8_t* bytePtr = (uint8_t*)&value;
+
+    // Write the bytes to flash memory
+    return writeBytesToFlash(address, bytePtr, sizeof(float));
+}
+
+
+
+bool flashWriteInt(uint32_t address, int value) {
+    // Create a pointer to a uint8_t, and cast the address of the float to it.
+    // This allows us to treat the float's memory as an array of bytes.
+    uint8_t* bytePtr = (uint8_t*)&value;
+
+    // Write the bytes to flash memory
+    return writeBytesToFlash(address, bytePtr, sizeof(int));
+}
+
+bool flashWriteUnsignedLong(uint32_t address, unsigned long value) {
+    // Create a pointer to a uint8_t, and cast the address of the float to it.
+    // This allows us to treat the float's memory as an array of bytes.
+    uint8_t* bytePtr = (uint8_t*)&value;
+
+    // Write the bytes to flash memory
+    return writeBytesToFlash(address, bytePtr, sizeof(unsigned long));
+}
+
+float flashReadFloat(uint32_t address) {
+    float result;
+    // Create a pointer to a uint8_t, and cast the address of the float result to it.
+    uint8_t* bytePtr = (uint8_t*)&result;
+
+    // Read 4 bytes from flash memory into the memory location of 'result'
+    readBytesFromFlash(address, bytePtr, sizeof(float));
+
+    return result;
+}
+
+int flashReadInt(uint32_t address) {
+    int result;
+    // Create a pointer to a uint8_t, and cast the address of the float result to it.
+    uint8_t* bytePtr = (uint8_t*)&result;
+
+    // Read 4 bytes from flash memory into the memory location of 'result'
+    readBytesFromFlash(address, bytePtr, sizeof(int));
+
+    return result;
+}
+
+byte flashReadByte(uint32_t address) {
+    byte result;
+    // Read 4 bytes from flash memory into the memory location of 'result'
+    readBytesFromFlash(address, &result, sizeof(byte));
+
+    return result;
+}
+
+unsigned long flashReadUnsignedLong(uint32_t address) {
+    unsigned long result;
+    // Create a pointer to a uint8_t, and cast the address of the float result to it.
+    uint8_t* bytePtr = (uint8_t*)&result;
+
+    // Read 4 bytes from flash memory into the memory location of 'result'
+    readBytesFromFlash(address, bytePtr, sizeof(unsigned long));
+
+    return result;
+}
+
+bool memEraseSector(uint16_t sector) {
+  if (sector > MAX_SECTORS) return false; // prevent overflow
+  uint32_t address = sector * SECTOR_SIZE;
+
+  // Write Enable
+  if (!memSendControlByte(WRITE_ENABLE)){
+    return false;
+  }
+
+  // Sector Erase (0x20)
+  memSelectPageAddress(address,SECTOR_ERASE);
+  digitalWrite(FLASH_MEMORY_CS, HIGH);
+
+  out << sector << "erased" << NL;
+
+  return memWaitUntilReady();
+}
