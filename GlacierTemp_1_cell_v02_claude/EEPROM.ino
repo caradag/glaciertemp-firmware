@@ -677,8 +677,31 @@ void writeU16LE(unsigned int v){
   Serial.write((byte)(v >> 8));
 }
 
+// Cambia la velocidad de la linea sin perder lo que quedaba por salir.
+//
+// El orden importa: primero se vacia el buffer de transmision a la velocidad VIEJA --si no,
+// los ultimos bytes saldrian a la nueva y el receptor los leeria como basura-- y solo
+// entonces se reprograma la UART. Al volver, la cola de recepcion puede traer bytes
+// recibidos a la velocidad equivocada, asi que se descarta.
+void switchBaud(unsigned long baud){
+  Serial.flush();
+  Serial.begin(baud);
+  while(Serial.available()){
+    Serial.read();
+  }
+}
+
 // Vuelca los registros [fromRec, toRec] inclusive. Un rango vacio se rechaza.
-void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
+//
+// Con fastBaud distinto de cero, los BLOQUES viajan a esa velocidad y el texto de apertura
+// y cierre se queda en la de siempre. Solo tiene sentido por cable: un modulo Bluetooth que
+// no llegue a esa velocidad no entenderia nada, y por eso la pide la app y no la decide la
+// placa.
+//
+// La velocidad alta NO se guarda en ningun sitio y no existe fuera de esta funcion: se
+// restaura por todas las salidas, y como la placa arranca siempre en BAUDRATE, un reinicio
+// --que de todas formas hace falta para abrir la consola-- deshace cualquier lio.
+void dumpLogBinary(unsigned long fromRec, unsigned long toRec, unsigned long fastBaud){
   unsigned long nSamples=getCount();
   if(nSamples==0){
     out << F("LOGB empty\n");
@@ -710,9 +733,17 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
   out << F(" to=") << toRec;
   out << F(" blocks=") << (unsigned long)nBlocks;
   out << F(" blocksize=") << (unsigned long)LOGB_BLOCK;
+  if(fastBaud!=0){
+    out << F(" fast=") << NOSPACER << fastBaud;
+  }
   out << NORMALTEXT;
   ln();
   Serial.flush();
+
+  // A partir de aqui, y solo hasta el ultimo bloque, la linea puede ir mas rapida.
+  if(fastBaud!=0){
+    switchBaud(fastBaud);
+  }
 
   byte buf[LOGB_CHUNK];
   for(unsigned int blk=0; blk<nBlocks; blk++){
@@ -742,6 +773,11 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec){
     }
     writeU16LE(crc);
     Serial.flush();
+  }
+  // Se vuelve ANTES de anunciar el cierre, para que "LOGB end" salga ya a la velocidad
+  // normal: es la senal con la que el receptor confirma que ambos extremos volvieron.
+  if(fastBaud!=0){
+    switchBaud(BAUDRATE);
   }
   out << F("LOGB end\n");
   flashPowerDown();
@@ -779,6 +815,10 @@ void printMetadata(){
   out << NOSPACER << F(" rec=") << (unsigned long)BYTES_PER_SAMPLE;
   out << F(" count=") << getCount();
   out << F(" flash=") << (unsigned long)(SECTOR_SIZE*(MAX_SECTORS+1));
+  // La app decide con esto si puede pedir el volcado rapido, en vez de deducirlo de la
+  // version: la cabecera se describe a si misma, como el resto del formato.
+  out << F(" baud=") << (unsigned long)BAUDRATE;
+  out << F(" fastbaud=") << (unsigned long)FAST_BAUDRATE;
   out << NORMALTEXT;
   ln();
   flashPowerDown();

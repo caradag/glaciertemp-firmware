@@ -8,6 +8,7 @@
 #include "Arduino.h"
 
 std::vector<unsigned char> g_wire;
+std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 FakeSerial Serial;
 unsigned long millis(){ return 0; }
 
@@ -29,6 +30,7 @@ void ln(){ out << NL; }
 #define LOG_SIGNATURE_ADDR 179
 #define BYTES_PER_SAMPLE 12
 #define POWER_UP 0xAB
+#define BAUDRATE 115200
 // SECTOR_SIZE, MAX_SECTORS, FIRMWARE_VERSION y PROTOCOL_VERSION se extraen del
 // sketch: copiarlos aqui haria que el banco aprobara una cabecera que anuncia
 // una version o un tamano de flash que la placa no tiene.
@@ -67,9 +69,16 @@ int main(int argc, char** argv){
   uint16_t c = crc16Ccitt((const byte*)v, 9, 0xFFFF);
   fprintf(stderr, "CRC(\"123456789\") = 0x%04X %s\n", c, c==0x29B1 ? "OK" : "FALLA");
 
+  unsigned long fast = (argc>5) ? strtoul(argv[5], nullptr, 10) : 0;
+
   printVersion();
   printMetadata();
-  dumpLogBinary(from, to);
+  dumpLogBinary(from, to, fast);
+
+  // Los cambios de velocidad se emiten aparte para que el comprobador los verifique.
+  FILE* bf = fopen("baud.txt", "w");
+  for(auto& c : g_baudChanges) fprintf(bf, "%zu %lu\n", c.first, c.second);
+  fclose(bf);
 
   FILE* f = fopen(argc>4 ? argv[4] : "wire.bin", "wb");
   fwrite(g_wire.data(), 1, g_wire.size(), f);

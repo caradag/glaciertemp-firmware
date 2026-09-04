@@ -6,12 +6,17 @@
 //   BOD ............ 2.7V
 //   Bootloader ..... Yes (UART0)
 //
-// The 7.3728 MHz crystal is not an arbitrary choice: it divides exactly to
-// 230400 baud. With F_CPU 7372800 the core computes UBRR=3 in double-speed
-// mode, giving 7372800/(8*4) = 230400 with ZERO error. That is the whole
-// reason this part is fitted instead of a round 8 MHz one -- at 8 MHz the
-// closest the hardware can get to 230400 is 250000, an 8.5% error, which no
-// receiver will decode.
+// The 7.3728 MHz crystal is not an arbitrary choice: it divides exactly to the
+// standard rates. With F_CPU 7372800 the core computes UBRR=7 for 115200 and
+// UBRR=3 for 230400, both in double-speed mode and both with ZERO error. That
+// is the whole reason this part is fitted instead of a round 8 MHz one -- at
+// 8 MHz the closest the hardware can get to 230400 is 250000, an 8.5% error,
+// which no receiver will decode.
+//
+// The console runs at 115200 (see BAUDRATE): that is the ceiling of the HM-10
+// bluetooth modules, and it is also what the MiniCore bootloader uses for this
+// clock, so upload, console and bluetooth all speak the same rate. The binary
+// dump can borrow 230400 for its duration over cable -- see dumpLogBinary.
 //
 // Getting the clock wrong does not fail to build and does not fail to upload;
 // it silently changes the baud rate on the wire, and the console fills with
@@ -753,10 +758,20 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.2"
-#define PROTOCOL_VERSION 1
+#define FIRMWARE_VERSION "2.3"
+#define PROTOCOL_VERSION 2
 
-#define BAUDRATE 230400
+// La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
+// pasan de ahi: a 230400 la placa y el modulo sencillamente no se entienden. Ademas es la
+// velocidad a la que el bootloader de MiniCore ya sube el firmware con este cristal, asi
+// que ahora carga, consola y Bluetooth hablan todos igual.
+//
+// No se pierde exactitud: con 7,3728 MHz, 115200 sale de UBRR=7 con CERO error, igual que
+// 230400 con UBRR=3.
+#define BAUDRATE 115200
+
+// Velocidad alta, solo durante el volcado binario y solo por cable. Ver dumpLogBinary.
+#define FAST_BAUDRATE 230400
 // Baudrate error calculator. NOTE the clock argument: this board runs at
 // 7.3728 MHz, not the 8 MHz the link used to say. At 8 MHz the table shows
 // 230400 with an 8.5% error, i.e. unusable; at 7.3728 MHz the error is zero.
@@ -1147,17 +1162,26 @@ void loop() {
         displayHistory(SHOW_ALL);
       }else if(!strcasecmp("logc", inputStr)){// Same log, compact: no sample number, no spaces
         displayHistory(SHOW_ALL_COMPACT);
-      }else if(!strncasecmp("logb", inputStr, 4)){// Volcado binario; LOGB=a,b para un rango
+      }else if(!strncasecmp("logb", inputStr, 4)){// Volcado binario; LOGB=a,b[,baud]
         // Sin rango se vuelca el log entero. Con "LOGB=a,b" solo esos registros,
         // que es el caso habitual: bajar lo nuevo desde la ultima visita.
-        unsigned long a=0, b=0xFFFFFFFFUL;
+        // Un tercer valor pide volcar los BLOQUES a esa velocidad; solo sirve por cable.
+        unsigned long a=0, b=0xFFFFFFFFUL, fast=0;
         char* eq=strchr(inputStr,'=');
         if(eq!=NULL){
           a=strtoul(eq+1,NULL,10);
           char* comma=strchr(eq,',');
-          b = (comma!=NULL) ? strtoul(comma+1,NULL,10) : a;
+          if(comma!=NULL){
+            b=strtoul(comma+1,NULL,10);
+            char* comma2=strchr(comma+1,',');
+            if(comma2!=NULL){
+              fast=strtoul(comma2+1,NULL,10);
+            }
+          }else{
+            b=a;
+          }
         }
-        dumpLogBinary(a,b);
+        dumpLogBinary(a,b,fast);
       }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
         // readULong returns 0 for a bare "logh", which selects the default span
         displayHistoryHex(readULong(inputStr));

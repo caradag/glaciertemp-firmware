@@ -6,12 +6,17 @@
 //   BOD ............ 2.7V
 //   Bootloader ..... Yes (UART0)
 //
-// The 7.3728 MHz crystal is not an arbitrary choice: it divides exactly to
-// 230400 baud. With F_CPU 7372800 the core computes UBRR=3 in double-speed
-// mode, giving 7372800/(8*4) = 230400 with ZERO error. That is the whole
-// reason this part is fitted instead of a round 8 MHz one -- at 8 MHz the
-// closest the hardware can get to 230400 is 250000, an 8.5% error, which no
-// receiver will decode.
+// The 7.3728 MHz crystal is not an arbitrary choice: it divides exactly to the
+// standard rates. With F_CPU 7372800 the core computes UBRR=7 for 115200 and
+// UBRR=3 for 230400, both in double-speed mode and both with ZERO error. That
+// is the whole reason this part is fitted instead of a round 8 MHz one -- at
+// 8 MHz the closest the hardware can get to 230400 is 250000, an 8.5% error,
+// which no receiver will decode.
+//
+// This sketch prints at 115200, the SAME rate as the main firmware and as the
+// MiniCore bootloader for this clock. Leaving it at 230400 would mean opening
+// the monitor at one rate to initialise a board and at another to talk to it,
+// which is exactly the kind of trap that reads as a dead board.
 //
 // Getting the clock wrong does not fail to build and does not fail to upload;
 // it silently changes the baud rate on the wire, and the console fills with
@@ -34,7 +39,7 @@
 
 
 void setup() {
-  Serial.begin(230400);
+  Serial.begin(115200);
 
 // Calculating timestamp of compilation time
 const char date[] = __DATE__;

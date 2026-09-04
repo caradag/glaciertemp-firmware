@@ -23,7 +23,14 @@ class __FlashStringHelper;
 // que hay que comprobar es como quedan entrelazados.
 extern std::vector<unsigned char> g_wire;
 
+// Cada llamada a begin() queda registrada junto con la posicion de la linea en la que
+// ocurrio: asi el banco puede comprobar QUE bytes viajaron a QUE velocidad, que es
+// justamente lo que hay que verificar del volcado rapido.
+extern std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
+
 struct FakeSerial {
+  void begin(unsigned long baud){ g_baudChanges.push_back({g_wire.size(), baud}); }
+  void end(){}
   void write(const char* s, size_t n){ for(size_t i=0;i<n;i++) g_wire.push_back((unsigned char)s[i]); }
   void write(unsigned char b){ g_wire.push_back(b); }
   void write(const byte* b, size_t n){ for(size_t i=0;i<n;i++) g_wire.push_back(b[i]); }
