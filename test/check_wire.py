@@ -73,10 +73,23 @@ out = HERE / "wire.bin"
 subprocess.run([str(HERE/"logb_host"), "100", "0", "0", str(out)],
                check=True, capture_output=True)
 lines = out.read_bytes().split(b"\n")
+# La secuencia del arranque: leer el identificador NO debe dejar la flash apagada. Cuando lo
+# hacia, los registros de estado se leian como 0xFF y la placa avisaba de un bloqueo
+# inexistente -- un 0xFF tiene puestos SRP0 y SRP1. Es el fallo que motivo esta comprobacion.
+sin_avisos = not any(l.startswith(b"WARNING") for l in lines)
+bad += not sin_avisos
+print(f"{'OK  ' if sin_avisos else 'FALLA'} una pieza sana no genera ningun aviso al arrancar")
+if not sin_avisos:
+    for l in lines:
+        if l.startswith(b"WARNING"):
+            print(f"      {l.decode()}")
+
 TEXTO = [
     (0, b"Board ID: 8BA925F7  (full 0011223344556677)",
         "el identificador corto y el completo, bien espaciados"),
-    (1, b"fw=2.5 proto=2",             "VER"),
+    (1, b"Flash status SR1/SR2: 0x00/0x02",
+        "los bytes de estado crudos, que distinguen un bloqueo real de un chip que no contesta"),
+    (2, b"fw=2.6 proto=2",             "VER"),
 ]
 # El corto tiene que ser el CRC-32 estandar de los 8 bytes, no una variante: asi cualquiera
 # puede recalcularlo desde el completo con zlib, python o una calculadora en linea.

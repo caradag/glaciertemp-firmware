@@ -59,6 +59,27 @@ void flashReportStatus(){
     // Would be a genuine surprise: a part whose QE can be, or has been, cleared
     out << F("Note: flash QE is clear, WP#/HOLD# are live\n");
   }
+
+  // Los bits BP/TB protegen el ARRAY, que es lo unico que puede impedir registrar; los SRP
+  // solo protegen el registro de estado. Se avisa aparte para no confundir una cosa con la
+  // otra.
+  if(sr1 & STATUS1_BP_MASK){
+    out << F("WARNING: flash block protection active, writes may fail\n");
+  }
+
+  // Los bytes crudos, siempre: un 0xFF 0xFF significa que el chip no contesta --tipicamente
+  // porque quedo apagado-- y no que este bloqueado. Sin verlos, ambos casos dan el mismo
+  // aviso y llevan a diagnosticos opuestos.
+  out << F("Flash status SR1/SR2:");
+  printHex8(sr1);
+  out << NOSPACER << '/';
+  printHex8(sr2);
+  out << NORMALTEXT;
+  ln();
+}
+
+void printHex8(byte v){
+  out << NOSPACER << "0x" << hexDigit(v>>4) << hexDigit(v) << NORMALTEXT;
 }
 
 // Put the flash into its lowest state and leave its pins in the matching
@@ -243,8 +264,14 @@ byte detectSPImemory() {
 // garantiza como unicos, de modo que dos chips del mismo lote pueden coincidir.
 //
 // El opcode va seguido de cuatro bytes dummy antes de los ocho de datos.
+// El QUE LLAMA debe tener la flash encendida, y decide si apagarla despues.
+//
+// Antes esta funcion encendia y apagaba por su cuenta, y eso rompio el arranque: al
+// imprimir el identificador justo antes de flashReportStatus(), lo dejaba apagado y las
+// lecturas de los registros de estado devolvian 0xFF. Un 0xFF tiene puestos SRP0 y SRP1,
+// asi que la placa avisaba de un bloqueo que no existia. Manejar la alimentacion dentro de
+// una funcion de lectura es lo que hace posible ese tipo de sorpresa a distancia.
 void readFlashUniqueID(byte* id8){
-  memSendControlByte(POWER_UP);
   digitalWrite(FLASH_MEMORY_CS, LOW);
   SPI.transfer(0x4B);
   for(byte i=0;i<4;i++){
@@ -254,7 +281,6 @@ void readFlashUniqueID(byte* id8){
     id8[i]=SPI.transfer(0x00);
   }
   digitalWrite(FLASH_MEMORY_CS, HIGH);
-  flashPowerDown();
 }
 
 // Imprime el identificador como 16 digitos hexadecimales, sin separadores, para
@@ -304,6 +330,13 @@ void printShortBoardId(){
 
 // Linea etiquetada para el arranque y para el bloque de informacion humano. El comando ID
 // sigue imprimiendo el identificador completo a secas, que es lo que una app quiere leer.
+// Para el comando ID: es una operacion aislada, asi que enciende y vuelve a apagar.
+void printBoardIdStandalone(){
+  memSendControlByte(POWER_UP);
+  printBoardId();
+  flashPowerDown();
+}
+
 void printBoardIdLine(){
   // Espaciado explicito: el separador automatico del stream no pone nada antes de un "(",
   // y sin NOSPACER metia uno dentro del parentesis.

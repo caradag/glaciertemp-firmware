@@ -7,7 +7,7 @@ SRC=../GlacierTemp_1_cell_v02_claude
 python3 extract.py "$SRC" \
   'GlacierTemp_1_cell_v02_claude.ino:#FIRMWARE_VERSION,#PROTOCOL_VERSION,#SECTOR_SIZE,#MAX_SECTORS,#FAST_BAUDRATE' \
   'Functions.ino:hexDigit' \
-  'FlashMem.ino:crc32Bytes,printBoardId,printShortBoardId,printBoardIdLine' \
+  'FlashMem.ino:crc32Bytes,readFlashUniqueID,printBoardId,printShortBoardId,printBoardIdLine,printHex8,flashReportStatus' \
   'EEPROM.ino:#LOGB_BLOCK,#LOGB_CHUNK,#FLOW_XOFF,#FLOW_XON,#SWITCH_SETTLE_MS,switchBaud,printHex16,crc16Ccitt,writeU16LE,flowControlCheck,dumpLogBinary,printMetadata,printVersion' \
   > extracted.h
 g++ -std=c++14 -Wall -I. -I"$SRC" -o logb_host logb_host.cpp

@@ -694,6 +694,7 @@ bool logFormatMismatch=false;
 #define READ_STATUS_2 0x35
 #define STATUS2_QE   0x02    // S9, Quad Enable
 #define STATUS1_SRP0 0x80    // S7,  Status Register Protect 0 (in SR1)
+#define STATUS1_BP_MASK 0x3C // S5..S2, TB + BP2..BP0: proteccion del array de memoria
 #define STATUS2_SRP1 0x01    // S8,  Status Register Protect 1 (in SR2)
 
 // Set to 1 to print the exact hardware state immediately before power-down.
@@ -758,7 +759,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.5"
+#define FIRMWARE_VERSION "2.6"
 #define PROTOCOL_VERSION 2
 
 // La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
@@ -1192,7 +1193,7 @@ void loop() {
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina
         printMetadata();
       }else if(!strcasecmp("ID", inputStr)){// Identificador unico de la placa
-        printBoardId();
+        printBoardIdStandalone();
         ln();
       }else if(!strcasecmp("H", inputStr)){// Prints help
         printHelp();

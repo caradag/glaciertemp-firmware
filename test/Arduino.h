@@ -41,4 +41,28 @@ struct FakeSerial {
 };
 extern FakeSerial Serial;
 unsigned long millis();
+extern bool g_flashPowered;
+
+// SPI simulado con lo justo para el opcode 0x4B (Read Unique ID): devuelve un patron fijo
+// cuando la flash esta encendida y 0xFF cuando no, igual que un chip que no contesta.
+struct FakeSPI {
+  int idx = -1;
+  byte transfer(byte b){
+    if(!g_flashPowered) return 0xFF;
+    if(b == 0x4B){ idx = 0; return 0xFF; }
+    if(idx >= 0){
+      int i = idx++;
+      if(i < 4) return 0xFF;              // los cuatro bytes de relleno
+      byte k = (byte)(i - 4);
+      return (byte)(0x10*k + k);          // 00 11 22 ... 77
+    }
+    return 0xFF;
+  }
+};
+extern FakeSPI SPI;
+// La flash del banco: leer su estado apagada devuelve 0xFF, como el chip real.
+void digitalWrite(int,int);
+#define FLASH_MEMORY_CS 0
+#define LOW 0
+#define HIGH 1
 void delay(unsigned long ms);
