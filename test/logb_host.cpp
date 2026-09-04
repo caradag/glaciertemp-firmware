@@ -11,6 +11,7 @@ std::vector<unsigned char> g_wire;
 std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 FakeSerial Serial;
 unsigned long millis(){ return 0; }
+void delay(unsigned long){}
 
 char* ultoa(unsigned long v, char* s, int base){ sprintf(s, "%lu", v); return s; }
 

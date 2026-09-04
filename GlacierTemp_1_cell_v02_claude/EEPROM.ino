@@ -652,6 +652,10 @@ unsigned int crc16Ccitt(const byte* data, byte len, unsigned int crc){
 //
 // No confundir con los comandos XON y XOFF del dispatcher, que conmutan un pin de
 // salida: aqui se trata de los bytes de control 0x11 y 0x13 en la linea serie.
+// Margen para que el otro extremo reprograme su puerto. 50 ms es holgado para un adaptador
+// USB-serie y despreciable frente a los minutos que dura un volcado completo.
+#define SWITCH_SETTLE_MS 50
+
 #define FLOW_XOFF 0x13
 #define FLOW_XON  0x11
 void flowControlCheck(){
@@ -689,6 +693,12 @@ void switchBaud(unsigned long baud){
   while(Serial.available()){
     Serial.read();
   }
+  // La pausa cierra una carrera real: el receptor solo sabe que tiene que cambiar cuando
+  // termina de LEER la linea que se lo dice, y para entonces la placa ya estaria emitiendo
+  // a la velocidad nueva. Sin esta espera, los primeros bytes de datos llegan mientras el
+  // otro extremo sigue en la velocidad vieja y se leen como basura -- que el CRC del bloque
+  // detectaria, pero obligando a repetirlo cada vez.
+  delay(SWITCH_SETTLE_MS);
 }
 
 // Vuelca los registros [fromRec, toRec] inclusive. Un rango vacio se rechaza.

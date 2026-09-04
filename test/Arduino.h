@@ -41,3 +41,4 @@ struct FakeSerial {
 };
 extern FakeSerial Serial;
 unsigned long millis();
+void delay(unsigned long ms);
