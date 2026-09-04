@@ -90,13 +90,12 @@ void displayInfo(){
 // El LED rojo ya lo senalaba, pero un LED no dice CUAL de los fallos posibles ocurrio, y al
 // reiniciar la placa no quedaba constancia de nada.
 void reportClockNotSet(){
+  // Tres lineas y no siete: en un ATmega328P cada literal ocupa flash, y las dos horas
+  // juntas ya dicen por que la del RTC es imposible.
   out << (char)(ASTERISK_BAR+3) << NL;
   out << F("ERROR: RTC clock not set\n");
   out << F("  RTC reads:"); displayUnixTime(currentTime); ln();
   out << F("  Firmware built:"); displayUnixTime(COMPILATION_TIME); ln();
-  out << F("  A clock earlier than the build cannot be right,\n");
-  out << F("  so every timestamp in the log would be wrong.\n");
-  out << F("  Set it with:  TIME=yyyy-mm-dd HH:MM\n");
   out << (char)(ASTERISK_BAR+3) << NL;
 }
 

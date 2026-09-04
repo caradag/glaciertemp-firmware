@@ -207,16 +207,26 @@ void setDateVector(byte *dateVec) {
   getCurrentTime();
 }
 
+// TIME=yyyy-mm-dd HH:MM  o  TIME=yyyy-mm-dd HH:MM:SS
+//
+// Los segundos son opcionales para no romper lo que ya se escribe a mano, pero hacen falta
+// para sincronizar contra el reloj de un telefono: sin ellos el ajuste arrastra hasta 59 s
+// de error, que es mucho mas que la deriva que se pretende corregir.
+//
+//         1111111111222
+// 1234567890123456789012
+// TIME=2023-10-23 12:11:30
 bool manualClockAdjust(char *inputStr){
   byte newDateVec[6]={0};
-  //TIME=2023-10-23 12:11
-  //012345678901234567890
   for(int i=2;i<7;i++){
     newDateVec[i-2]=readLong(inputStr,i*3+1,i*3+2);
   }
-  //time=2024-11-01 17:21
-  //012345678901234567890
-  if(inputStr[4]=='=' && inputStr[9]=='-' && inputStr[12]=='-' && inputStr[15]==' ' && inputStr[18]==':' && newDateVec[0]>24 && newDateVec[1]>0 && newDateVec[1]<13 && newDateVec[2]>0 && newDateVec[2]<32 && newDateVec[3]<25 && newDateVec[4]<60){
+  // Se mira la longitud antes del caracter: sin esto, una cadena corta hace leer memoria
+  // sin inicializar del buffer, que un dia de cada 256 contiene ':'.
+  if(strlen(inputStr)>=24 && inputStr[21]==':'){
+    newDateVec[5]=readLong(inputStr,22,23);
+  }
+  if(inputStr[4]=='=' && inputStr[9]=='-' && inputStr[12]=='-' && inputStr[15]==' ' && inputStr[18]==':' && newDateVec[0]>24 && newDateVec[1]>0 && newDateVec[1]<13 && newDateVec[2]>0 && newDateVec[2]<32 && newDateVec[3]<25 && newDateVec[4]<60 && newDateVec[5]<60){
     setDateVector(newDateVec);
     return true;
   }else{
