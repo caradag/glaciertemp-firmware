@@ -759,7 +759,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.6"
+#define FIRMWARE_VERSION "2.7"
 #define PROTOCOL_VERSION 2
 
 // La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
@@ -960,6 +960,10 @@ void setup() {
   // Updating GPS data and adjusting RTC clock
   if (COMPILATION_TIME>currentTime){
     doAdjustTimeOnStartup=true;
+    // Se avisa aqui ademas de encender el LED: el LED dice que algo va mal, no que sea el
+    // reloj, y al reiniciar no quedaba ni rastro del motivo.
+    reportClockNotSet();
+    setupFailed=true;
   }
   prevDay=dayOfYear(currentDateVec[0],currentDateVec[1],currentDateVec[2]);
   sessionStartTime=currentTime;

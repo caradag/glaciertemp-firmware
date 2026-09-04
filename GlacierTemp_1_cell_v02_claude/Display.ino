@@ -79,6 +79,27 @@ void displayInfo(){
   out << F("Batt.:") << '\xB2' << battVoltage/10 << "V (" << voltageToCapacity(battVoltage) << "%)\n";
 }
 
+// Aviso destacado de reloj sin ajustar.
+//
+// Que el RTC marque una hora ANTERIOR a la compilacion del firmware solo puede significar
+// que perdio la hora --pila agotada, primer arranque de la placa-- porque el firmware no
+// puede haberse ejecutado antes de existir. Con esa condicion el logger sigue midiendo, pero
+// cada marca de tiempo del log queda mal, que es un dato inservible: es un error, no un
+// detalle.
+//
+// El LED rojo ya lo senalaba, pero un LED no dice CUAL de los fallos posibles ocurrio, y al
+// reiniciar la placa no quedaba constancia de nada.
+void reportClockNotSet(){
+  out << (char)(ASTERISK_BAR+3) << NL;
+  out << F("ERROR: RTC clock not set\n");
+  out << F("  RTC reads:"); displayUnixTime(currentTime); ln();
+  out << F("  Firmware built:"); displayUnixTime(COMPILATION_TIME); ln();
+  out << F("  A clock earlier than the build cannot be right,\n");
+  out << F("  so every timestamp in the log would be wrong.\n");
+  out << F("  Set it with:  TIME=yyyy-mm-dd HH:MM\n");
+  out << (char)(ASTERISK_BAR+3) << NL;
+}
+
 void displayExtendedInfo(){  
   displayInfo();
 

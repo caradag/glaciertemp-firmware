@@ -37,6 +37,11 @@ void ln(){ out << NL; }
 #define STATUS1_SRP0 0x80
 #define STATUS2_SRP1 0x01
 #define STATUS1_BP_MASK 0x3C
+#define ASTERISK_BAR '\xD0'
+#define COMPILATION_TIME 840748759UL
+unsigned long currentTime = 800000000UL;   // un reloj sin ajustar, anterior a la compilacion
+// Basta con que imprima algo estable: lo que se comprueba aqui es el ENCUADRE del aviso.
+void displayUnixTime(unsigned long t){ out << NOSPACER << t << NORMALTEXT; }
 #define BAUDRATE 115200
 // SECTOR_SIZE, MAX_SECTORS, FIRMWARE_VERSION y PROTOCOL_VERSION se extraen del
 // sketch: copiarlos aqui haria que el banco aprobara una cabecera que anuncia
@@ -85,6 +90,8 @@ int main(int argc, char** argv){
   // Reproduce el arranque: la flash queda encendida tras detectar la memoria, se imprime el
   // identificador y a continuacion se leen los registros de estado. Esa secuencia es la que
   // se rompio, y por eso se ejecuta entera.
+  reportClockNotSet();
+
   memSendControlByte(POWER_UP);
   printBoardIdLine();
   fprintf(stderr, "flash encendida tras imprimir el ID: %s\n",

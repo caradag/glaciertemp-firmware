@@ -76,6 +76,16 @@ lines = out.read_bytes().split(b"\n")
 # La secuencia del arranque: leer el identificador NO debe dejar la flash apagada. Cuando lo
 # hacia, los registros de estado se leian como 0xFF y la placa avisaba de un bloqueo
 # inexistente -- un 0xFF tiene puestos SRP0 y SRP1. Es el fallo que motivo esta comprobacion.
+# El aviso de reloj sin ajustar: encuadrado por las barras de 31 asteriscos, y con la hora
+# del RTC junto a la de compilacion para que se vea POR QUE es imposible.
+barra = b"*" * 31
+enc = lines[0] == barra and lines[7] == barra
+bad += not enc
+print(f"{'OK  ' if enc else 'FALLA'} el aviso de reloj va encuadrado entre barras de asteriscos")
+tiene_ambas = any(b"RTC reads:" in l for l in lines) and any(b"Firmware built:" in l for l in lines)
+bad += not tiene_ambas
+print(f"{'OK  ' if tiene_ambas else 'FALLA'} el aviso muestra la hora del RTC y la de compilacion")
+
 sin_avisos = not any(l.startswith(b"WARNING") for l in lines)
 bad += not sin_avisos
 print(f"{'OK  ' if sin_avisos else 'FALLA'} una pieza sana no genera ningun aviso al arrancar")
@@ -85,17 +95,17 @@ if not sin_avisos:
             print(f"      {l.decode()}")
 
 TEXTO = [
-    (0, b"Board ID: 8BA925F7  (full 0011223344556677)",
+    (8, b"Board ID: 8BA925F7  (full 0011223344556677)",
         "el identificador corto y el completo, bien espaciados"),
-    (1, b"Flash status SR1/SR2: 0x00/0x02",
+    (9, b"Flash status SR1/SR2: 0x00/0x02",
         "los bytes de estado crudos, que distinguen un bloqueo real de un chip que no contesta"),
-    (2, b"fw=2.6 proto=2",             "VER"),
+    (10, b"fw=2.7 proto=2",             "VER"),
 ]
 # El corto tiene que ser el CRC-32 estandar de los 8 bytes, no una variante: asi cualquiera
 # puede recalcularlo desde el completo con zlib, python o una calculadora en linea.
 import zlib
 esperado_sid = "%08X" % zlib.crc32(bytes([0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77]))
-ok = esperado_sid.encode() in lines[0]
+ok = esperado_sid.encode() in lines[8]
 bad += not ok
 print(f"{'OK  ' if ok else 'FALLA'} el identificador corto es el CRC-32 estandar del completo")
 
