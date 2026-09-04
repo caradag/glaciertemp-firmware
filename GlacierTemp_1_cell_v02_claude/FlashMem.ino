@@ -269,6 +269,14 @@ void printBoardId(){
   out << NORMALTEXT;
 }
 
+// Linea etiquetada para el arranque y para el bloque de informacion humano. El comando ID
+// sigue imprimiendo el identificador a secas, que es lo que una app quiere leer.
+void printBoardIdLine(){
+  out << F("Board ID:");
+  printBoardId();
+  ln();
+}
+
 bool flashWriteFloat(uint32_t address, float value) {
     // Create a pointer to a uint8_t, and cast the address of the float to it.
     // This allows us to treat the float's memory as an array of bytes.

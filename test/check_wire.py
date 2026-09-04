@@ -67,6 +67,23 @@ for count, a, b, desc in CASES:
         else:
             print(f"      longitudes {len(got)} vs {len(exp)}")
 
+# Las lineas de texto: el stream inserta separadores por su cuenta y ya produjo una vez
+# "INFO fw= 2.1proto= 1". Se comprueban aqui porque a ojo no se distingue.
+out = HERE / "wire.bin"
+subprocess.run([str(HERE/"logb_host"), "100", "0", "0", str(out)],
+               check=True, capture_output=True)
+lines = out.read_bytes().split(b"\n")
+TEXTO = [
+    (0, b"Board ID: 0011223344556677", "el identificador de placa lleva etiqueta y 16 digitos"),
+    (1, b"fw=2.4 proto=2",             "VER"),
+]
+for i, esperado, desc in TEXTO:
+    ok = lines[i] == esperado
+    bad += not ok
+    print(f"{'OK  ' if ok else 'FALLA'} {desc}")
+    if not ok:
+        print(f"      esperado {esperado!r}\n      leido    {lines[i]!r}")
+
 # El log vacio no tiene equivalente en el simulador porque este siempre tiene datos.
 got = run(0, 0, 0)
 ok = got == b"LOGB empty\n" or b"LOGB empty" in got

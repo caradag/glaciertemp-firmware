@@ -758,7 +758,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.3"
+#define FIRMWARE_VERSION "2.4"
 #define PROTOCOL_VERSION 2
 
 // La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
@@ -908,6 +908,8 @@ void setup() {
   }
   out << F("memory detected\n");
   if(capacity>0){
+    // Sin memoria no hay identificador que leer: los 64 bits vienen de fabrica en ese chip.
+    printBoardIdLine();
     flashReportStatus();
   }
   flashPowerDown();

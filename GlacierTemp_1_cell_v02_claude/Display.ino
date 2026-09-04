@@ -82,6 +82,10 @@ void displayInfo(){
 void displayExtendedInfo(){  
   displayInfo();
 
+  // Va aqui y no en displayInfo() para no repetirlo: displayInfo() ya se imprime en el
+  // arranque, donde el identificador sale junto a la deteccion de la memoria.
+  printBoardIdLine();
+
   out << F("\tSesion start:"); displayUnixTime(sessionStartTime); ln();
   out << '\t' << '\xB1' << runningDays() << F("days running\n");
   out << F("\tExpected battery life:") << battDaysLeft() << F("days (drop") << battDrop() << F("% over") << '\xB1' << runningDays() << F("days)\n");

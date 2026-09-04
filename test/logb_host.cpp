@@ -72,6 +72,7 @@ int main(int argc, char** argv){
 
   unsigned long fast = (argc>5) ? strtoul(argv[5], nullptr, 10) : 0;
 
+  printBoardIdLine();
   printVersion();
   printMetadata();
   dumpLogBinary(from, to, fast);
