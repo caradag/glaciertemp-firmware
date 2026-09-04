@@ -827,6 +827,9 @@ void printMetadata(){
   out << F(" flash=") << (unsigned long)(SECTOR_SIZE*(MAX_SECTORS+1));
   // La app decide con esto si puede pedir el volcado rapido, en vez de deducirlo de la
   // version: la cabecera se describe a si misma, como el resto del formato.
+  // El corto lo calcula la placa y no la app: si cada extremo lo dedujera por su cuenta,
+  // serian dos implementaciones del mismo CRC esperando a divergir.
+  out << F(" sid="); printShortBoardId(); out << NOSPACER;
   out << F(" baud=") << (unsigned long)BAUDRATE;
   out << F(" fastbaud=") << (unsigned long)FAST_BAUDRATE;
   out << NORMALTEXT;

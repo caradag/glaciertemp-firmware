@@ -269,12 +269,49 @@ void printBoardId(){
   out << NORMALTEXT;
 }
 
+// Identificador corto: 32 bits derivados de los 64 de fabrica, en 8 digitos hexadecimales.
+//
+// Se obtiene por CRC y NO recortando bytes. Winbond no documenta como esta compuesto el
+// numero de serie, y en los identificadores de silicio es habitual que los bytes altos
+// codifiquen lote y oblea: dos placas compradas juntas --que son justamente las que uno
+// tiene-- serian las mas expuestas a compartirlos. El CRC reparte de forma uniforme sea cual
+// sea esa estructura, asi que la probabilidad de choque se puede calcular: con 100 placas es
+// de una entre 870.000.
+//
+// El identificador completo sigue estando en el comando ID y en la cabecera INFO. Este es
+// para escribirlo, leerlo en voz alta y nombrar ficheros.
+unsigned long crc32Bytes(const byte* data, byte len){
+  unsigned long crc=0xFFFFFFFFUL;
+  for(byte i=0;i<len;i++){
+    crc ^= data[i];
+    for(byte b=0;b<8;b++){
+      crc = (crc & 1UL) ? ((crc>>1) ^ 0xEDB88320UL) : (crc>>1);
+    }
+  }
+  return crc ^ 0xFFFFFFFFUL;
+}
+
+void printShortBoardId(){
+  byte id[8];
+  readFlashUniqueID(id);
+  unsigned long sid=crc32Bytes(id,8);
+  out << NOSPACER;
+  for(int8_t i=28;i>=0;i-=4){
+    out << hexDigit((byte)(sid>>i));
+  }
+  out << NORMALTEXT;
+}
+
 // Linea etiquetada para el arranque y para el bloque de informacion humano. El comando ID
-// sigue imprimiendo el identificador a secas, que es lo que una app quiere leer.
+// sigue imprimiendo el identificador completo a secas, que es lo que una app quiere leer.
 void printBoardIdLine(){
+  // Espaciado explicito: el separador automatico del stream no pone nada antes de un "(",
+  // y sin NOSPACER metia uno dentro del parentesis.
   out << F("Board ID:");
+  printShortBoardId();
+  out << NOSPACER << F("  (full ");
   printBoardId();
-  ln();
+  out << NOSPACER << F(")\n") << NORMALTEXT;
 }
 
 bool flashWriteFloat(uint32_t address, float value) {

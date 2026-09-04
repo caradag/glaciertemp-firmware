@@ -74,9 +74,18 @@ subprocess.run([str(HERE/"logb_host"), "100", "0", "0", str(out)],
                check=True, capture_output=True)
 lines = out.read_bytes().split(b"\n")
 TEXTO = [
-    (0, b"Board ID: 0011223344556677", "el identificador de placa lleva etiqueta y 16 digitos"),
-    (1, b"fw=2.4 proto=2",             "VER"),
+    (0, b"Board ID: 8BA925F7  (full 0011223344556677)",
+        "el identificador corto y el completo, bien espaciados"),
+    (1, b"fw=2.5 proto=2",             "VER"),
 ]
+# El corto tiene que ser el CRC-32 estandar de los 8 bytes, no una variante: asi cualquiera
+# puede recalcularlo desde el completo con zlib, python o una calculadora en linea.
+import zlib
+esperado_sid = "%08X" % zlib.crc32(bytes([0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77]))
+ok = esperado_sid.encode() in lines[0]
+bad += not ok
+print(f"{'OK  ' if ok else 'FALLA'} el identificador corto es el CRC-32 estandar del completo")
+
 for i, esperado, desc in TEXTO:
     ok = lines[i] == esperado
     bad += not ok
