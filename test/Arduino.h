@@ -28,6 +28,16 @@ extern std::vector<unsigned char> g_wire;
 // justamente lo que hay que verificar del volcado rapido.
 extern std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 
+// Inyeccion de control de flujo. El receptor pide la pausa en una posicion concreta de la
+// linea y el banco anota EN QUE posicion la atendio el firmware: la diferencia es el
+// sobrepaso, que es exactamente lo que hay que medir. Un volcado que no comprueba nunca
+// tiene sobrepaso infinito y no se distingue mirando los datos.
+extern long g_xoffAfter;     // posicion a partir de la cual hay un XOFF esperando; -1 nunca
+extern bool g_xoffDone;      // ya lo leyo el firmware
+extern bool g_xonDone;       // ya se le entrego el XON que lo reanuda
+extern long g_xoffSeenAt;    // posicion de la linea cuando lo leyo
+extern long g_xonSeenAt;     // posicion cuando reanudo
+
 struct FakeSerial {
   void begin(unsigned long baud){ g_baudChanges.push_back({g_wire.size(), baud}); }
   void end(){}
@@ -35,9 +45,19 @@ struct FakeSerial {
   void write(unsigned char b){ g_wire.push_back(b); }
   void write(const byte* b, size_t n){ for(size_t i=0;i<n;i++) g_wire.push_back(b[i]); }
   void flush(){}
-  int available(){ return 0; }
-  int peek(){ return -1; }
-  int read(){ return -1; }
+
+  bool xoffPending(){
+    return g_xoffAfter>=0 && !g_xoffDone && (long)g_wire.size()>=g_xoffAfter;
+  }
+  bool xonPending(){ return g_xoffDone && !g_xonDone; }
+
+  int available(){ return (xoffPending() || xonPending()) ? 1 : 0; }
+  int peek(){ return xoffPending() ? 0x13 : (xonPending() ? 0x11 : -1); }
+  int read(){
+    if(xoffPending()){ g_xoffDone=true; g_xoffSeenAt=(long)g_wire.size(); return 0x13; }
+    if(xonPending()){ g_xonDone=true; g_xonSeenAt=(long)g_wire.size(); return 0x11; }
+    return -1;
+  }
 };
 extern FakeSerial Serial;
 unsigned long millis();

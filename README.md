@@ -20,6 +20,32 @@ consumo para despliegues largos en glaciares.
 - **Radio**: modulo BLE (HM-10 o equivalente) como accesorio, en la misma UART que el USB
 - **Opcionales**: GPS y modem Iridium RockBLOCK por puerto serie por software
 
+## Compilar desde la linea de ordenes
+
+Las librerias viven en `~/Documents/sketchbook/libraries`, que NO es el sketchbook por
+defecto de `arduino-cli`; sin decirselo, la compilacion falla por `LowPower.h`:
+
+```bash
+arduino-cli compile --fqbn MiniCore:avr:328 \
+  --libraries ~/Documents/sketchbook/libraries \
+  GlacierTemp_1_cell_v02_claude
+```
+
+### Ocupacion de flash de programa
+
+El ATmega328P con el bootloader de MiniCore deja **32.384 bytes**. Conviene anotar la
+ocupacion en cada hito, porque el margen se agota antes de lo que parece y un sketch que no
+cabe se descubre al final de una tanda de cambios y no al principio.
+
+| Hito | Programa | % | RAM global |
+|---|---|---|---|
+| `v1.0.0` | 24.148 | 74 % | -- |
+| `v1.3.0` (firmware 2.3) | 26.838 | 82 % | -- |
+| firmware 2.7, antes de la tanda G1--G11 | 27.714 | 85 % | 869 B (42 %) |
+| firmware 2.8, con G1 + G6 + G4 (firmware) | 28.220 | 87 % | 906 B (44 %) |
+| firmware 2.9, LOGH vuelca la memoria entera | 28.152 | 86 % | 906 B (44 %) |
+| firmware 3.0, LOGH con volcado rapido | 28.346 | 87 % | 906 B (44 %) |
+
 ## AJUSTES DE PLACA OBLIGATORIOS
 
 El Arduino IDE 2.x guarda la seleccion de placa **por sketch**, no por proyecto. Compilar

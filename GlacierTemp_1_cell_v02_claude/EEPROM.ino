@@ -805,6 +805,51 @@ void printVersion(){
   ln();
 }
 
+// Cuanto dura la memoria QUE QUEDA con el intervalo actual, y en que fecha se llenaria.
+//
+// Se imprime al cambiar INT porque es justo entonces cuando la pregunta importa y cuando
+// nadie la hace: duplicar el intervalo duplica la autonomia, y eso no se ve mirando el
+// numero de segundos. Se cuentan los registros LIBRES y no la capacidad total, porque una
+// placa a medio llenar daria una cifra que no describe nada.
+//
+// El producto registros x intervalo NO CABE en 32 bits: 699.050 registros libres a 86.400 s
+// son 6,04e10 segundos, catorce veces el techo del unsigned long del AVR. Hacerlo en 64 bits
+// funciona pero cuesta 828 bytes de flash en ayudantes, inasumible al 87 % de ocupacion.
+//
+// La salida es descomponer el intervalo en minutos y resto:
+//
+//   dias = libres*(intervalo/60)/1440 + libres*(intervalo%60)/86400
+//
+// El mayor producto intermedio es 699.050 x 1.440 = 1,007e9, holgado dentro de los 32 bits.
+// La unica perdida es el redondeo de dividir dos veces por separado en vez de una: medido
+// sobre todo el rango de intervalos y de ocupaciones, como mucho UN dia de diferencia
+// respecto al calculo exacto. En una cifra que habla de anos, eso no es un error.
+void printMemoryLifetime(){
+  unsigned long maxRecords=(SECTOR_SIZE*(MAX_SECTORS+1))/BYTES_PER_SAMPLE;
+  unsigned long used=getCount();
+  unsigned long freeRecords=(used>=maxRecords) ? 0 : (maxRecords-used);
+  unsigned long interval=measureInterval;
+
+  unsigned long days = freeRecords*(interval/60UL)/1440UL
+                     + freeRecords*(interval%60UL)/86400UL;
+
+  out << F("Memory:") << freeRecords << F("free records,") << days << F("days at");
+  out << interval << F("s\n");
+
+  if(freeRecords==0){
+    out << F("Memory is FULL\n");
+    return;
+  }
+  // Mas alla de medio siglo la fecha no significa nada y ademas desbordaria el tiempo unix
+  // de 32 bits: a un dia de intervalo la memoria vacia dura mil novecientos anos.
+  if(days>18250UL){
+    out << F("Full in more than 50 years\n");
+    return;
+  }
+  getCurrentTime();
+  out << F("Full on:"); displayUnixTime(currentTime+days*86400UL); ln();
+}
+
 // El comando I imprime un bloque pensado para leerlo con los ojos, y una app que
 // tuviera que sacar de ahi el tamano de registro dependeria de como esta redactado.
 // Esta linea es el contrato de maquina y por eso la cubre PROTOCOL_VERSION.
@@ -837,22 +882,42 @@ void printMetadata(){
   flashPowerDown();
 }
 
-void displayHistoryHex(unsigned long nBytes){
+// El volcado crudo, opcionalmente a mayor velocidad.
+//
+// Con fastBaud distinto de cero, los REGISTROS Intel HEX viajan a esa velocidad y el texto
+// de apertura y el de cierre se quedan en la de siempre, igual que en dumpLogBinary. Aqui
+// importa mas que alli: por cable a 115200 los ocho megas son media hora larga, y a 230400
+// son diecisiete minutos.
+//
+// El registro de FIN DE FICHERO viaja todavia rapido, y el cambio de vuelta ocurre justo
+// despues. Asi el receptor tiene una senal clara e inequivoca de cuando volver --la misma
+// que ya usa para saber que el volcado acabo-- en vez de tener que contar registros.
+void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
   memSendControlByte(POWER_UP);
   unsigned long nSamples=getCount();
   unsigned long flashBytes=SECTOR_SIZE*(MAX_SECTORS+1);
   unsigned int stored=getUInt(LOG_SIGNATURE_ADDR);
   byte stride = logFormatMismatch ? MAX_RECORD_BYTES : BYTES_PER_SAMPLE;
 
+  // Sin argumento se vuelca la memoria ENTERA, no los registros que el contador dice que
+  // hay. Este comando es la via de recuperacion para cuando el propio firmware no puede
+  // leer su log: un contador corrompido, una firma de canales que no cuadra, una version
+  // que interpreta el registro de otro tamano. En cualquiera de esos casos nSamples es
+  // justamente el dato del que NO hay que fiarse, y volcar lo que ese numero diga dejaria
+  // fuera precisamente lo que se intenta rescatar.
+  //
+  // Cuesta tiempo --ocho megas son unos 23 de Intel HEX, media hora larga por cable-- pero
+  // este comando no se usa a diario: para el caso corriente esta LOGB. Quien sepa cuanto
+  // quiere puede seguir pidiendo LOGH=n.
   if(nBytes==0){
-    nBytes = nSamples * (unsigned long)stride;
+    nBytes = flashBytes;
   }
   if(nBytes>flashBytes){
     nBytes=flashBytes;
   }
 
   // Metadata first, so the capture carries everything needed to decode it.
-  out << F("LOGH raw log dump\n");
+  out << F("LOGH raw memory dump\n");
   out << F("samples:") << nSamples << NL;
   out << F("bytes:") << nBytes << F("of") << flashBytes << NL;
   out << F("this build record size:") << (unsigned long)BYTES_PER_SAMPLE << NL;
@@ -861,8 +926,19 @@ void displayHistoryHex(unsigned long nBytes){
   if(logFormatMismatch){
     out << F("MISMATCH: record size below is a guess, dumping at") << (unsigned long)stride << NL;
   }
+  if(fastBaud!=0){
+    out << F("fast:") << fastBaud << NL;
+  }
   out << F("Intel HEX follows. Keep from the first ':' to :00000001FF\n");
+  Serial.flush();
 
+  // A partir de aqui, y hasta el registro de fin de fichero incluido, la linea puede ir
+  // mas rapida.
+  if(fastBaud!=0){
+    switchBaud(fastBaud);
+  }
+
+  unsigned long logDumpStart=millis();
   if(nBytes==0){
     out << F("Log empty\n");
   }else{
@@ -870,8 +946,17 @@ void displayHistoryHex(unsigned long nBytes){
     // 0xFFFF cannot be a real upper address here, so the first data record is
     // always preceded by its type 04 record and no parser has to assume a base.
     unsigned int upper=0xFFFF;
-    unsigned long logDumpStart=millis();
     for(unsigned long a=0; a<nBytes; a+=16){
+      // Control de flujo, con el MISMO grano que dumpLogBinary: cada 256 bytes de datos,
+      // es decir cada dieciseis registros Intel HEX. Comprobarlo en cada registro costaria
+      // una lectura de registro por cada 16 bytes sin ganar nada; no comprobarlo nunca
+      // --que es lo que hacia-- deja sin frenar justo el volcado mas largo que hace la
+      // placa, el unico que dura media hora y el que mas expuesto esta a desbordar un
+      // puente BLE. En Intel HEX cada 16 bytes de datos salen como 43 de linea, asi que
+      // 256 bytes de dato son ~688 de linea entre comprobacion y comprobacion.
+      if((a & 0xFF)==0){
+        flowControlCheck();
+      }
       unsigned long left=nBytes-a;
       byte n = (left>=16) ? 16 : (byte)left;
       unsigned int hi=(unsigned int)(a>>16);
@@ -884,6 +969,18 @@ void displayHistoryHex(unsigned long nBytes){
       ihexRecord(0x00, (unsigned int)(a & 0xFFFFUL), b, n);
     }
     ihexRecord(0x01, 0x0000, NULL, 0);   // end of file
+  }
+  // Se vuelve SIEMPRE y fuera de las dos ramas. La linea no puede quedarse en la velocidad
+  // rapida pase lo que pase, y el camino del volcado vacio --que no emite un solo registro--
+  // tambien habria subido la velocidad sin bajarla.
+  //
+  // El cambio ocurre justo DESPUES del registro de fin de fichero: ese registro es la senal
+  // con la que el receptor sabe que el volcado acabo, asi que hacerla coincidir con el
+  // cambio le evita tener que deducirlo contando bytes.
+  if(fastBaud!=0){
+    switchBaud(BAUDRATE);
+  }
+  if(nBytes!=0){
     unsigned long elapsedMs=millis()-logDumpStart;
     out << nBytes << F("bytes in") << '\xB2' << elapsedMs/10 << F("seconds\n");
   }

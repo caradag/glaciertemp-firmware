@@ -80,7 +80,17 @@
 */
 
 #include "./lightOStream.h"
-char buf[127];
+// Buffer de UNA linea. Es un limite duro y silencioso: la linea solo se emite cuando el
+// stream recibe el '\n', y si el buffer se llena antes, ese '\n' no cabe, la linea no se
+// vacia nunca y ARRASTRA a las siguientes hasta que algo la limpie. No se pierde una linea:
+// se pierden todas las que vengan detras.
+//
+// Con 127 cabian 126 caracteres contando el salto, y la cabecera INFO ya ocupaba 123. El
+// identificador corto con formato "GT001-XXXXXX" le sumo cuatro y la dejo justo un byte por
+// encima, llevandose por delante tambien la cabecera de LOGB que venia despues. 160 deja 33
+// bytes de margen y cuesta 33 bytes de RAM, con ~1,1 kB libres.
+#define OUT_BUFFER_SIZE 160
+char buf[OUT_BUFFER_SIZE];
 lightOStream out(buf, sizeof(buf));
 
 void displayDateVec(byte *dateVec, bool showTimezone=true);
@@ -759,8 +769,20 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.7"
-#define PROTOCOL_VERSION 2
+#define FIRMWARE_VERSION "3.0"
+#define PROTOCOL_VERSION 4
+
+// Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
+// los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
+//
+//   BOARD_TYPE        que tipo de placa es (Glacier Temp)
+//   BOARD_HW_VERSION  que REVISION del hardware es, no que firmware corre
+//
+// FIRMWARE_VERSION cambia con cada arreglo; BOARD_HW_VERSION solo cuando cambia la placa
+// fisica. Como son constantes de compilacion, una revision nueva de placa exige su propia
+// compilacion con este numero cambiado.
+#define BOARD_TYPE "GT"
+#define BOARD_HW_VERSION "001"
 
 // La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
 // pasan de ahi: a 230400 la placa y el modulo sencillamente no se entienden. Ademas es la
@@ -1068,7 +1090,10 @@ void loop() {
         if (varID==MEASURE_INTERVAL){
           // Re-show the next wake-up with the interval the user just set
           setWakeUp();
-        } 
+          // Y lo que de verdad decide ese numero: cuanto dura la memoria y cuando se
+          // llena. Va despues de setWakeUp() porque este ya ha refrescado currentTime.
+          printMemoryLifetime();
+        }
       }else if(!strcasecmp("M", inputStr)){
         getCurrentTime();
         takeMeasurement();   
@@ -1189,9 +1214,26 @@ void loop() {
           }
         }
         dumpLogBinary(a,b,fast);
-      }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
-        // readULong returns 0 for a bare "logh", which selects the default span
-        displayHistoryHex(readULong(inputStr));
+      }else if(!strncasecmp("logh", inputStr, 4)){// Volcado crudo; LOGH[=n[,baud]]
+        // Sin argumentos se vuelca la memoria entera. "LOGH=n" la acota a n bytes, y un
+        // segundo valor pide que los REGISTROS Intel HEX viajen a esa velocidad. Como en
+        // LOGB, solo tiene sentido por cable y por eso lo pide el anfitrion: es el unico
+        // que sabe si debajo hay un cable o una radio.
+        unsigned long hexBytes=0, fast=0;
+        char* eqh=strchr(inputStr,'=');
+        if(eqh!=NULL){
+          hexBytes=strtoul(eqh+1,NULL,10);
+          char* commah=strchr(eqh,',');
+          if(commah!=NULL){
+            fast=strtoul(commah+1,NULL,10);
+          }
+        }
+        displayHistoryHex(hexBytes, fast);
+      }else if(!strcasecmp("CALC", inputStr)){// Cuanto dura la memoria libre
+        // Estaba anunciado en la lista de comandos de arriba desde hacia tiempo y no
+        // existia: escribirlo devolvia "comando desconocido". Ahora responde lo mismo que
+        // sale al cambiar INT, pero sin tener que cambiar nada para preguntarlo.
+        printMemoryLifetime();
       }else if(!strcasecmp("VER", inputStr)){// Version de firmware y de protocolo
         printVersion();
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina

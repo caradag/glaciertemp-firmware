@@ -94,20 +94,35 @@ if not sin_avisos:
         if l.startswith(b"WARNING"):
             print(f"      {l.decode()}")
 
+# Las constantes se LEEN del sketch, no se copian: un valor escrito a mano aqui
+# aprueba una cabecera que anuncia una version que la placa ya no tiene.
+import re, pathlib
+DEFS = pathlib.Path(__file__).resolve().parent / "extracted_defs.h"
+_defs = DEFS.read_text(encoding="utf-8")
+def const(name):
+    m = re.search(r'^#define\s+' + name + r'\s+"?([^"\s]+)"?', _defs, re.M)
+    if not m:
+        raise SystemExit(f"no encuentro {name} en extracted_defs.h; ejecuta build.sh")
+    return m.group(1)
+
+FW, PROTO = const("FIRMWARE_VERSION"), const("PROTOCOL_VERSION")
+TIPO, HW = const("BOARD_TYPE"), const("BOARD_HW_VERSION")
+SID = f"{TIPO}{HW}-556677"      # los seis ultimos digitos del identificador falso
+
 TEXTO = [
-    (5, b"Board ID: 8BA925F7  (full 0011223344556677)",
+    (5, f"Board ID: {SID}  (full 0011223344556677)".encode(),
         "el identificador corto y el completo, bien espaciados"),
     (6, b"Flash status SR1/SR2: 0x00/0x02",
         "los bytes de estado crudos, que distinguen un bloqueo real de un chip que no contesta"),
-    (7, b"fw=2.7 proto=2",             "VER"),
+    (7, f"fw={FW} proto={PROTO}".encode(), "VER"),
 ]
-# El corto tiene que ser el CRC-32 estandar de los 8 bytes, no una variante: asi cualquiera
-# puede recalcularlo desde el completo con zlib, python o una calculadora en linea.
-import zlib
-esperado_sid = "%08X" % zlib.crc32(bytes([0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77]))
-ok = esperado_sid.encode() in lines[5]
+# El corto son los SEIS ULTIMOS digitos hexadecimales del completo, con el prefijo de tipo y
+# revision de hardware. Se comprueba derivandolo del completo y no copiandolo: asi el test
+# sigue valiendo si cambia el identificador falso del banco.
+completo = "0011223344556677"
+ok = f"{TIPO}{HW}-{completo[-6:]}".encode() in lines[5]
 bad += not ok
-print(f"{'OK  ' if ok else 'FALLA'} el identificador corto es el CRC-32 estandar del completo")
+print(f"{'OK  ' if ok else 'FALLA'} el corto es tipo+revision+los seis ultimos digitos del completo")
 
 for i, esperado, desc in TEXTO:
     ok = lines[i] == esperado

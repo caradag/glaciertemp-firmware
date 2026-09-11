@@ -6,10 +6,17 @@
 // el simulador y contra el lector de la app que los tres hablan el mismo
 // idioma, sin placa y sin telefono.
 #include "Arduino.h"
+// Constantes del sketch, extraidas: hacen falta antes que las funciones.
+#include "extracted_defs.h"
 
 std::vector<unsigned char> g_wire;
 std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 FakeSerial Serial;
+long g_xoffAfter = -1;
+bool g_xoffDone = false;
+bool g_xonDone = false;
+long g_xoffSeenAt = -1;
+long g_xonSeenAt = -1;
 FakeSPI SPI;
 unsigned long millis(){ return 0; }
 void delay(unsigned long){}
@@ -22,10 +29,11 @@ long int10Pow(byte power);
 long intPow(int power,int base){ long o=1; for(int i=0;i<power;i++) o*=base; return o; }
 long int10Pow(byte power){ return intPow(power,10); }
 
-// El mismo tamano que el firmware real: el stream descarta en silencio lo que
-// no cabe antes del salto de linea, asi que un banco con un buffer mas grande
-// no veria ese fallo.
-static char outBuf[127];
+// El mismo tamano que el firmware real, EXTRAIDO y no copiado. Un banco con un buffer
+// mas grande no veria el fallo, y uno con el tamano copiado a mano dejaria de verlo en
+// cuanto alguien cambiara el del sketch: la linea solo se emite al recibir el '\n', asi
+// que un buffer que se llena antes se come esa linea y todas las siguientes.
+static char outBuf[OUT_BUFFER_SIZE];
 lightOStream out(outBuf, sizeof(outBuf));
 void ln(){ out << NL; }
 
@@ -61,6 +69,18 @@ void flashPowerDown(){ g_flashPowered = false; }
 byte memReadStatus(){  return g_flashPowered ? 0x00 : 0xFF; }
 byte memReadStatus2(){ return g_flashPowered ? 0x02 : 0xFF; }
 uint32_t getCount(){ return g_count; }
+
+// Entorno de printMemoryLifetime. El intervalo se pasa por linea de ordenes para poder
+// probar los casos extremos --1 s y 86.400 s con la memoria vacia-- que son justo los que
+// desbordarian si el calculo se hiciera de la forma evidente.
+unsigned long measureInterval = 600;
+void getCurrentTime(){}
+
+// Entorno de displayHistoryHex. El banco usa el mismo tamano de registro para el log
+// almacenado y para esta compilacion, asi que no hay desajuste que simular.
+bool logFormatMismatch = false;
+#define MAX_RECORD_BYTES 12
+#define LOG_SIGNATURE 0x100F
 uint16_t getUInt(int){ return g_sig; }
 void readBytesFromFlash(uint32_t addr, byte* buf, uint32_t len){
   for(uint32_t i=0;i<len;i++){
@@ -100,6 +120,31 @@ int main(int argc, char** argv){
   printVersion();
   printMetadata();
   dumpLogBinary(from, to, fast);
+
+  // Volcado Intel HEX con inyeccion de XOFF: argv[7] es la posicion de la linea a partir
+  // de la cual el receptor pide la pausa. Sin ese argumento no se ejecuta, para no alterar
+  // la comparacion byte a byte de check_wire.py contra el simulador.
+  if(argc>7){
+    g_xoffAfter = strtol(argv[7], nullptr, 10);
+    // argv[8] acota el volcado. Sin el se vuelcan los ocho megas enteros, que es el
+    // comportamiento real; con el, las pruebas de control de flujo no tienen que mover
+    // veintitres megas por cada caso para comprobar un sobrepaso de medio kilobyte.
+    unsigned long hexBytes = (argc>8) ? strtoul(argv[8], nullptr, 10) : 0;
+    unsigned long hexFast  = (argc>9) ? strtoul(argv[9], nullptr, 10) : 0;
+    g_baudChanges.clear();          // solo interesan los del volcado crudo
+    displayHistoryHex(hexBytes, hexFast);
+    FILE* ff = fopen("flow.txt", "w");
+    fprintf(ff, "%ld %ld %ld %zu\n", g_xoffAfter, g_xoffSeenAt, g_xonSeenAt, g_wire.size());
+    for(auto& c : g_baudChanges) fprintf(ff, "%zu %lu\n", c.first, c.second);
+    fclose(ff);
+  }
+
+  // Solo si se pide un intervalo: check_wire.py compara byte a byte contra el simulador,
+  // y estas dos lineas pertenecen a la respuesta de INT, no a la secuencia de arranque.
+  if(argc>6){
+    measureInterval = strtoul(argv[6], nullptr, 10);
+    printMemoryLifetime();
+  }
 
   // Los cambios de velocidad se emiten aparte para que el comprobador los verifique.
   FILE* bf = fopen("baud.txt", "w");
