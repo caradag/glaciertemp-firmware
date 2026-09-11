@@ -294,7 +294,7 @@ counter++;
               "S[x]$Stay in command mode for x min\n"
               "LOG$Show data log\n"
               "LOGC$Compact data log\n"
-              "LOGH$Raw log as Intel HEX\n"
+              "LOGH$Whole memory as Intel HEX\n"
               "LOGB$Binary log (=a,b for range)\n"
               "V1=/V2=$Battery calibration points\n"
               "A01=/A02=$A0 calibration (A11= for A1..)\n"

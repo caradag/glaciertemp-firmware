@@ -889,15 +889,25 @@ void displayHistoryHex(unsigned long nBytes){
   unsigned int stored=getUInt(LOG_SIGNATURE_ADDR);
   byte stride = logFormatMismatch ? MAX_RECORD_BYTES : BYTES_PER_SAMPLE;
 
+  // Sin argumento se vuelca la memoria ENTERA, no los registros que el contador dice que
+  // hay. Este comando es la via de recuperacion para cuando el propio firmware no puede
+  // leer su log: un contador corrompido, una firma de canales que no cuadra, una version
+  // que interpreta el registro de otro tamano. En cualquiera de esos casos nSamples es
+  // justamente el dato del que NO hay que fiarse, y volcar lo que ese numero diga dejaria
+  // fuera precisamente lo que se intenta rescatar.
+  //
+  // Cuesta tiempo --ocho megas son unos 23 de Intel HEX, media hora larga por cable-- pero
+  // este comando no se usa a diario: para el caso corriente esta LOGB. Quien sepa cuanto
+  // quiere puede seguir pidiendo LOGH=n.
   if(nBytes==0){
-    nBytes = nSamples * (unsigned long)stride;
+    nBytes = flashBytes;
   }
   if(nBytes>flashBytes){
     nBytes=flashBytes;
   }
 
   // Metadata first, so the capture carries everything needed to decode it.
-  out << F("LOGH raw log dump\n");
+  out << F("LOGH raw memory dump\n");
   out << F("samples:") << nSamples << NL;
   out << F("bytes:") << nBytes << F("of") << flashBytes << NL;
   out << F("this build record size:") << (unsigned long)BYTES_PER_SAMPLE << NL;

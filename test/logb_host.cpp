@@ -126,7 +126,11 @@ int main(int argc, char** argv){
   // la comparacion byte a byte de check_wire.py contra el simulador.
   if(argc>7){
     g_xoffAfter = strtol(argv[7], nullptr, 10);
-    displayHistoryHex(0);
+    // argv[8] acota el volcado. Sin el se vuelcan los ocho megas enteros, que es el
+    // comportamiento real; con el, las pruebas de control de flujo no tienen que mover
+    // veintitres megas por cada caso para comprobar un sobrepaso de medio kilobyte.
+    unsigned long hexBytes = (argc>8) ? strtoul(argv[8], nullptr, 10) : 0;
+    displayHistoryHex(hexBytes);
     FILE* ff = fopen("flow.txt", "w");
     fprintf(ff, "%ld %ld %ld %zu\n", g_xoffAfter, g_xoffSeenAt, g_xonSeenAt, g_wire.size());
     fclose(ff);

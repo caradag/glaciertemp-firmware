@@ -41,9 +41,14 @@ def intervalo_de_comprobacion():
     return int(m.group(1), 16) + 1
 
 
-def run(count, xoff_at):
+# Volcado acotado para las pruebas de flujo: lo que se mide es el sobrepaso en bytes, y
+# para eso no hacen falta los veintitres megas del volcado completo.
+HEX_BYTES = 20000
+
+
+def run(count, xoff_at, hex_bytes=HEX_BYTES):
     subprocess.run([str(HERE / "logb_host"), str(count), "0", "0", str(HERE / "flow.bin"),
-                    "0", "600", str(xoff_at)],
+                    "0", "600", str(xoff_at), str(hex_bytes)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     a, b, c, total = (int(x) for x in (HERE / "flow.txt").read_text().split())
     return a, b, c, total
@@ -92,6 +97,34 @@ def main():
         bad += 1
     else:
         print("OK   el volcado termina en :00000001FF pese a la pausa")
+
+    # --- el volcado SIN argumento tiene que ser la memoria entera -------------
+    #
+    # LOGH es la via de recuperacion para cuando el firmware no puede leer su propio log:
+    # con el contador corrompido o la firma cambiada, nSamples es justamente el dato del que
+    # no hay que fiarse. Volcar "los registros grabados" dejaria fuera lo que se rescata.
+    run(100, 10**9, hex_bytes=0)          # xoff imposible de alcanzar: no frena
+    texto = (HERE / "flow.bin").read_bytes().decode("latin-1")
+    m = re.search(r"bytes:\s*(\d+)\s*of\s*(\d+)", texto)
+    if not m:
+        print("FALLA: la cabecera de LOGH no dice cuantos bytes vuelca")
+        bad += 1
+    elif m.group(1) != m.group(2):
+        print(f"FALLA: vuelca {m.group(1)} de {m.group(2)} bytes; deberia volcar la memoria entera")
+        bad += 1
+    else:
+        print(f"OK   sin argumento vuelca la memoria entera: {m.group(1)} bytes")
+
+    # Y con un contador de CERO registros tambien: es el caso que mas importa, porque un
+    # contador a cero es sintoma tipico de la averia que justifica este comando.
+    run(0, 10**9, hex_bytes=0)
+    texto = (HERE / "flow.bin").read_bytes().decode("latin-1")
+    m = re.search(r"bytes:\s*(\d+)\s*of\s*(\d+)", texto)
+    if not m or m.group(1) != m.group(2) or m.group(1) == "0":
+        print("FALLA: con el contador a cero deja de volcar; es justo cuando hace falta")
+        bad += 1
+    else:
+        print(f"OK   con el contador a cero sigue volcando los {m.group(1)} bytes")
 
     print("todo en verde" if not bad else f"{bad} casos fallan")
     return 1 if bad else 0
