@@ -300,6 +300,7 @@ counter++;
               "A01=/A02=$A0 calibration (A11= for A1..)\n"
               "ID$Board unique ID\n"
               "VER$Firmware and protocol version\n"
+              "CALC$Memory left and fill date\n"
               "RC$Reset counter and memory\n"
               "BX$Bluetooth OFF and quit\n"
               "Q$Quit command mode\n\n"

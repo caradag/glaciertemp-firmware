@@ -1090,7 +1090,10 @@ void loop() {
         if (varID==MEASURE_INTERVAL){
           // Re-show the next wake-up with the interval the user just set
           setWakeUp();
-        } 
+          // Y lo que de verdad decide ese numero: cuanto dura la memoria y cuando se
+          // llena. Va despues de setWakeUp() porque este ya ha refrescado currentTime.
+          printMemoryLifetime();
+        }
       }else if(!strcasecmp("M", inputStr)){
         getCurrentTime();
         takeMeasurement();   
@@ -1214,6 +1217,11 @@ void loop() {
       }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
         // readULong returns 0 for a bare "logh", which selects the default span
         displayHistoryHex(readULong(inputStr));
+      }else if(!strcasecmp("CALC", inputStr)){// Cuanto dura la memoria libre
+        // Estaba anunciado en la lista de comandos de arriba desde hacia tiempo y no
+        // existia: escribirlo devolvia "comando desconocido". Ahora responde lo mismo que
+        // sale al cambiar INT, pero sin tener que cambiar nada para preguntarlo.
+        printMemoryLifetime();
       }else if(!strcasecmp("VER", inputStr)){// Version de firmware y de protocolo
         printVersion();
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina

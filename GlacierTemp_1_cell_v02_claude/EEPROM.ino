@@ -805,6 +805,51 @@ void printVersion(){
   ln();
 }
 
+// Cuanto dura la memoria QUE QUEDA con el intervalo actual, y en que fecha se llenaria.
+//
+// Se imprime al cambiar INT porque es justo entonces cuando la pregunta importa y cuando
+// nadie la hace: duplicar el intervalo duplica la autonomia, y eso no se ve mirando el
+// numero de segundos. Se cuentan los registros LIBRES y no la capacidad total, porque una
+// placa a medio llenar daria una cifra que no describe nada.
+//
+// El producto registros x intervalo NO CABE en 32 bits: 699.050 registros libres a 86.400 s
+// son 6,04e10 segundos, catorce veces el techo del unsigned long del AVR. Hacerlo en 64 bits
+// funciona pero cuesta 828 bytes de flash en ayudantes, inasumible al 87 % de ocupacion.
+//
+// La salida es descomponer el intervalo en minutos y resto:
+//
+//   dias = libres*(intervalo/60)/1440 + libres*(intervalo%60)/86400
+//
+// El mayor producto intermedio es 699.050 x 1.440 = 1,007e9, holgado dentro de los 32 bits.
+// La unica perdida es el redondeo de dividir dos veces por separado en vez de una: medido
+// sobre todo el rango de intervalos y de ocupaciones, como mucho UN dia de diferencia
+// respecto al calculo exacto. En una cifra que habla de anos, eso no es un error.
+void printMemoryLifetime(){
+  unsigned long maxRecords=(SECTOR_SIZE*(MAX_SECTORS+1))/BYTES_PER_SAMPLE;
+  unsigned long used=getCount();
+  unsigned long freeRecords=(used>=maxRecords) ? 0 : (maxRecords-used);
+  unsigned long interval=measureInterval;
+
+  unsigned long days = freeRecords*(interval/60UL)/1440UL
+                     + freeRecords*(interval%60UL)/86400UL;
+
+  out << F("Memory:") << freeRecords << F("free records,") << days << F("days at");
+  out << interval << F("s\n");
+
+  if(freeRecords==0){
+    out << F("Memory is FULL\n");
+    return;
+  }
+  // Mas alla de medio siglo la fecha no significa nada y ademas desbordaria el tiempo unix
+  // de 32 bits: a un dia de intervalo la memoria vacia dura mil novecientos anos.
+  if(days>18250UL){
+    out << F("Full in more than 50 years\n");
+    return;
+  }
+  getCurrentTime();
+  out << F("Full on:"); displayUnixTime(currentTime+days*86400UL); ln();
+}
+
 // El comando I imprime un bloque pensado para leerlo con los ojos, y una app que
 // tuviera que sacar de ahi el tamano de registro dependeria de como esta redactado.
 // Esta linea es el contrato de maquina y por eso la cubre PROTOCOL_VERSION.

@@ -64,6 +64,12 @@ void flashPowerDown(){ g_flashPowered = false; }
 byte memReadStatus(){  return g_flashPowered ? 0x00 : 0xFF; }
 byte memReadStatus2(){ return g_flashPowered ? 0x02 : 0xFF; }
 uint32_t getCount(){ return g_count; }
+
+// Entorno de printMemoryLifetime. El intervalo se pasa por linea de ordenes para poder
+// probar los casos extremos --1 s y 86.400 s con la memoria vacia-- que son justo los que
+// desbordarian si el calculo se hiciera de la forma evidente.
+unsigned long measureInterval = 600;
+void getCurrentTime(){}
 uint16_t getUInt(int){ return g_sig; }
 void readBytesFromFlash(uint32_t addr, byte* buf, uint32_t len){
   for(uint32_t i=0;i<len;i++){
@@ -103,6 +109,13 @@ int main(int argc, char** argv){
   printVersion();
   printMetadata();
   dumpLogBinary(from, to, fast);
+
+  // Solo si se pide un intervalo: check_wire.py compara byte a byte contra el simulador,
+  // y estas dos lineas pertenecen a la respuesta de INT, no a la secuencia de arranque.
+  if(argc>6){
+    measureInterval = strtoul(argv[6], nullptr, 10);
+    printMemoryLifetime();
+  }
 
   // Los cambios de velocidad se emiten aparte para que el comprobador los verifique.
   FILE* bf = fopen("baud.txt", "w");
