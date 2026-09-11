@@ -882,7 +882,17 @@ void printMetadata(){
   flashPowerDown();
 }
 
-void displayHistoryHex(unsigned long nBytes){
+// El volcado crudo, opcionalmente a mayor velocidad.
+//
+// Con fastBaud distinto de cero, los REGISTROS Intel HEX viajan a esa velocidad y el texto
+// de apertura y el de cierre se quedan en la de siempre, igual que en dumpLogBinary. Aqui
+// importa mas que alli: por cable a 115200 los ocho megas son media hora larga, y a 230400
+// son diecisiete minutos.
+//
+// El registro de FIN DE FICHERO viaja todavia rapido, y el cambio de vuelta ocurre justo
+// despues. Asi el receptor tiene una senal clara e inequivoca de cuando volver --la misma
+// que ya usa para saber que el volcado acabo-- en vez de tener que contar registros.
+void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
   memSendControlByte(POWER_UP);
   unsigned long nSamples=getCount();
   unsigned long flashBytes=SECTOR_SIZE*(MAX_SECTORS+1);
@@ -916,8 +926,19 @@ void displayHistoryHex(unsigned long nBytes){
   if(logFormatMismatch){
     out << F("MISMATCH: record size below is a guess, dumping at") << (unsigned long)stride << NL;
   }
+  if(fastBaud!=0){
+    out << F("fast:") << fastBaud << NL;
+  }
   out << F("Intel HEX follows. Keep from the first ':' to :00000001FF\n");
+  Serial.flush();
 
+  // A partir de aqui, y hasta el registro de fin de fichero incluido, la linea puede ir
+  // mas rapida.
+  if(fastBaud!=0){
+    switchBaud(fastBaud);
+  }
+
+  unsigned long logDumpStart=millis();
   if(nBytes==0){
     out << F("Log empty\n");
   }else{
@@ -925,7 +946,6 @@ void displayHistoryHex(unsigned long nBytes){
     // 0xFFFF cannot be a real upper address here, so the first data record is
     // always preceded by its type 04 record and no parser has to assume a base.
     unsigned int upper=0xFFFF;
-    unsigned long logDumpStart=millis();
     for(unsigned long a=0; a<nBytes; a+=16){
       // Control de flujo, con el MISMO grano que dumpLogBinary: cada 256 bytes de datos,
       // es decir cada dieciseis registros Intel HEX. Comprobarlo en cada registro costaria
@@ -949,6 +969,18 @@ void displayHistoryHex(unsigned long nBytes){
       ihexRecord(0x00, (unsigned int)(a & 0xFFFFUL), b, n);
     }
     ihexRecord(0x01, 0x0000, NULL, 0);   // end of file
+  }
+  // Se vuelve SIEMPRE y fuera de las dos ramas. La linea no puede quedarse en la velocidad
+  // rapida pase lo que pase, y el camino del volcado vacio --que no emite un solo registro--
+  // tambien habria subido la velocidad sin bajarla.
+  //
+  // El cambio ocurre justo DESPUES del registro de fin de fichero: ese registro es la senal
+  // con la que el receptor sabe que el volcado acabo, asi que hacerla coincidir con el
+  // cambio le evita tener que deducirlo contando bytes.
+  if(fastBaud!=0){
+    switchBaud(BAUDRATE);
+  }
+  if(nBytes!=0){
     unsigned long elapsedMs=millis()-logDumpStart;
     out << nBytes << F("bytes in") << '\xB2' << elapsedMs/10 << F("seconds\n");
   }

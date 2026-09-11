@@ -46,12 +46,15 @@ def intervalo_de_comprobacion():
 HEX_BYTES = 20000
 
 
-def run(count, xoff_at, hex_bytes=HEX_BYTES):
+def run(count, xoff_at, hex_bytes=HEX_BYTES, fast=0):
     subprocess.run([str(HERE / "logb_host"), str(count), "0", "0", str(HERE / "flow.bin"),
-                    "0", "600", str(xoff_at), str(hex_bytes)],
+                    "0", "600", str(xoff_at), str(hex_bytes), str(fast)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    a, b, c, total = (int(x) for x in (HERE / "flow.txt").read_text().split())
-    return a, b, c, total
+    lineas = (HERE / "flow.txt").read_text().strip().split("\n")
+    a, b, c, total = (int(x) for x in lineas[0].split())
+    # Cada linea siguiente es un cambio de velocidad: posicion en la linea y baudios.
+    cambios = [tuple(int(x) for x in l.split()) for l in lineas[1:] if l.strip()]
+    return a, b, c, total, cambios
 
 
 def main():
@@ -71,7 +74,7 @@ def main():
         (500, 8000, "pausa en un volcado largo"),
         (100, 1,    "pausa en el primer byte"),
     ]:
-        pedido, atendido, reanudado, total = run(count, xoff_at)
+        pedido, atendido, reanudado, total, _ = run(count, xoff_at)
         errs = []
         if atendido < 0:
             errs.append("el firmware NUNCA leyo el XOFF: no hay control de flujo")
@@ -125,6 +128,68 @@ def main():
         bad += 1
     else:
         print(f"OK   con el contador a cero sigue volcando los {m.group(1)} bytes")
+
+    # --- volcado rapido: donde cae exactamente el cambio de velocidad ---------
+    #
+    # Un cambio un registro antes o despues no se ve mirando los datos: el receptor leeria
+    # basura justo en el borde. Se comprueba la POSICION, como hace check_baud.py con LOGB.
+    _, _, _, total, cambios = run(100, 10**9, hex_bytes=20000, fast=230400)
+    texto = (HERE / "flow.bin").read_bytes().decode("latin-1")
+    # rfind y no find: el PREAMBULO menciona el registro de fin de fichero en su texto
+    # ("Keep from the first ':' to :00000001FF"), asi que buscar hacia adelante encuentra la
+    # mencion y no el registro. Lo mismo con el primer registro de datos, que hay que buscar
+    # despues de esa linea y no desde el principio.
+    eof = texto.rfind(":00000001FF")
+    tras_preambulo = texto.find("Intel HEX follows")
+    fin_preambulo = texto.find("\n", tras_preambulo) if tras_preambulo >= 0 else 0
+
+    if len(cambios) != 2:
+        print(f"FALLA: se esperaban dos cambios de velocidad y hubo {len(cambios)}: {cambios}")
+        bad += 1
+    else:
+        (pos_sube, baud_sube), (pos_baja, baud_baja) = cambios
+        primer_registro = texto.find(":", fin_preambulo)
+        errs = []
+        if baud_sube != 230400:
+            errs.append(f"sube a {baud_sube} en vez de a 230400")
+        if baud_baja == 230400:
+            errs.append("no vuelve a la velocidad normal")
+        # La subida tiene que caer ANTES del primer registro Intel HEX y DESPUES de la
+        # cabecera de texto: si cayera antes, la cabecera saldria ilegible.
+        if not (0 < pos_sube <= primer_registro):
+            errs.append(f"sube en {pos_sube}, fuera de la cabecera ({primer_registro})")
+        # Y la bajada, DESPUES del fin de fichero: ese registro es la senal de vuelta.
+        if not (eof < pos_baja <= eof + len(":00000001FF") + 2):
+            errs.append(f"baja en {pos_baja}, y el fin de fichero esta en {eof}")
+        if errs:
+            print("FALLA volcado rapido: " + "; ".join(errs))
+            bad += 1
+        else:
+            print(f"OK   sube a {baud_sube} tras la cabecera ({pos_sube}) y vuelve a "
+                  f"{baud_baja} justo tras el fin de fichero ({pos_baja})")
+
+        # La cabecera tiene que anunciar la velocidad, o el receptor no sabria cambiar.
+        if "fast:" not in texto:
+            print("FALLA: la cabecera no anuncia la velocidad rapida")
+            bad += 1
+        else:
+            print("OK   la cabecera anuncia la velocidad con fast:")
+
+    # Sin pedirlo, no se toca la velocidad.
+    _, _, _, _, cambios = run(100, 10**9, hex_bytes=20000, fast=0)
+    if cambios:
+        print(f"FALLA: sin pedirlo cambia la velocidad: {cambios}")
+        bad += 1
+    else:
+        print("OK   sin pedirlo no se toca la velocidad")
+
+    # Un volcado vacio tampoco puede dejar la linea en la velocidad rapida.
+    _, _, _, _, cambios = run(100, 10**9, hex_bytes=0, fast=230400)
+    if cambios and cambios[-1][1] == 230400:
+        print("FALLA: la linea se queda en la velocidad rapida")
+        bad += 1
+    else:
+        print("OK   la linea nunca se queda en la velocidad rapida")
 
     print("todo en verde" if not bad else f"{bad} casos fallan")
     return 1 if bad else 0

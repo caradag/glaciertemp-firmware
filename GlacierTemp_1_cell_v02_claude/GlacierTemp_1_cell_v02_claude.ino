@@ -769,8 +769,8 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.9"
-#define PROTOCOL_VERSION 3
+#define FIRMWARE_VERSION "3.0"
+#define PROTOCOL_VERSION 4
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
 // los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
@@ -1214,9 +1214,21 @@ void loop() {
           }
         }
         dumpLogBinary(a,b,fast);
-      }else if(!strncasecmp("logh", inputStr, 4)){// Raw log as Intel HEX; LOGH=n for an explicit byte count
-        // readULong returns 0 for a bare "logh", which selects the default span
-        displayHistoryHex(readULong(inputStr));
+      }else if(!strncasecmp("logh", inputStr, 4)){// Volcado crudo; LOGH[=n[,baud]]
+        // Sin argumentos se vuelca la memoria entera. "LOGH=n" la acota a n bytes, y un
+        // segundo valor pide que los REGISTROS Intel HEX viajen a esa velocidad. Como en
+        // LOGB, solo tiene sentido por cable y por eso lo pide el anfitrion: es el unico
+        // que sabe si debajo hay un cable o una radio.
+        unsigned long hexBytes=0, fast=0;
+        char* eqh=strchr(inputStr,'=');
+        if(eqh!=NULL){
+          hexBytes=strtoul(eqh+1,NULL,10);
+          char* commah=strchr(eqh,',');
+          if(commah!=NULL){
+            fast=strtoul(commah+1,NULL,10);
+          }
+        }
+        displayHistoryHex(hexBytes, fast);
       }else if(!strcasecmp("CALC", inputStr)){// Cuanto dura la memoria libre
         // Estaba anunciado en la lista de comandos de arriba desde hacia tiempo y no
         // existia: escribirlo devolvia "comando desconocido". Ahora responde lo mismo que

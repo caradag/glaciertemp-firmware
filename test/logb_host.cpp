@@ -130,9 +130,12 @@ int main(int argc, char** argv){
     // comportamiento real; con el, las pruebas de control de flujo no tienen que mover
     // veintitres megas por cada caso para comprobar un sobrepaso de medio kilobyte.
     unsigned long hexBytes = (argc>8) ? strtoul(argv[8], nullptr, 10) : 0;
-    displayHistoryHex(hexBytes);
+    unsigned long hexFast  = (argc>9) ? strtoul(argv[9], nullptr, 10) : 0;
+    g_baudChanges.clear();          // solo interesan los del volcado crudo
+    displayHistoryHex(hexBytes, hexFast);
     FILE* ff = fopen("flow.txt", "w");
     fprintf(ff, "%ld %ld %ld %zu\n", g_xoffAfter, g_xoffSeenAt, g_xonSeenAt, g_wire.size());
+    for(auto& c : g_baudChanges) fprintf(ff, "%zu %lu\n", c.first, c.second);
     fclose(ff);
   }
 
