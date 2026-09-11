@@ -917,6 +917,16 @@ void displayHistoryHex(unsigned long nBytes){
     unsigned int upper=0xFFFF;
     unsigned long logDumpStart=millis();
     for(unsigned long a=0; a<nBytes; a+=16){
+      // Control de flujo, con el MISMO grano que dumpLogBinary: cada 256 bytes de datos,
+      // es decir cada dieciseis registros Intel HEX. Comprobarlo en cada registro costaria
+      // una lectura de registro por cada 16 bytes sin ganar nada; no comprobarlo nunca
+      // --que es lo que hacia-- deja sin frenar justo el volcado mas largo que hace la
+      // placa, el unico que dura media hora y el que mas expuesto esta a desbordar un
+      // puente BLE. En Intel HEX cada 16 bytes de datos salen como 43 de linea, asi que
+      // 256 bytes de dato son ~688 de linea entre comprobacion y comprobacion.
+      if((a & 0xFF)==0){
+        flowControlCheck();
+      }
       unsigned long left=nBytes-a;
       byte n = (left>=16) ? 16 : (byte)left;
       unsigned int hi=(unsigned int)(a>>16);

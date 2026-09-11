@@ -18,7 +18,7 @@ python3 extract.py "$SRC" \
   'Functions.ino:hexDigit' \
   'Display.ino:reportClockNotSet' \
   'FlashMem.ino:readFlashUniqueID,printBoardId,printShortBoardId,printBoardIdLine,printHex8,flashReportStatus' \
-  'EEPROM.ino:switchBaud,printHex16,crc16Ccitt,writeU16LE,flowControlCheck,dumpLogBinary,printMetadata,printVersion,printMemoryLifetime' \
+  'EEPROM.ino:switchBaud,printHex16,crc16Ccitt,writeU16LE,flowControlCheck,dumpLogBinary,printMetadata,printVersion,printMemoryLifetime,ihexRecord,displayHistoryHex' \
   > extracted.h
 
 g++ -std=c++14 -Wall -I. -I"$SRC" -o logb_host logb_host.cpp

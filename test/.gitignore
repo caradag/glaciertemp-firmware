@@ -3,3 +3,5 @@ extracted.h
 extracted_defs.h
 logb_host
 *.bin
+flow.txt
+baud.txt

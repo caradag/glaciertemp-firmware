@@ -12,6 +12,11 @@
 std::vector<unsigned char> g_wire;
 std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 FakeSerial Serial;
+long g_xoffAfter = -1;
+bool g_xoffDone = false;
+bool g_xonDone = false;
+long g_xoffSeenAt = -1;
+long g_xonSeenAt = -1;
 FakeSPI SPI;
 unsigned long millis(){ return 0; }
 void delay(unsigned long){}
@@ -70,6 +75,12 @@ uint32_t getCount(){ return g_count; }
 // desbordarian si el calculo se hiciera de la forma evidente.
 unsigned long measureInterval = 600;
 void getCurrentTime(){}
+
+// Entorno de displayHistoryHex. El banco usa el mismo tamano de registro para el log
+// almacenado y para esta compilacion, asi que no hay desajuste que simular.
+bool logFormatMismatch = false;
+#define MAX_RECORD_BYTES 12
+#define LOG_SIGNATURE 0x100F
 uint16_t getUInt(int){ return g_sig; }
 void readBytesFromFlash(uint32_t addr, byte* buf, uint32_t len){
   for(uint32_t i=0;i<len;i++){
@@ -109,6 +120,17 @@ int main(int argc, char** argv){
   printVersion();
   printMetadata();
   dumpLogBinary(from, to, fast);
+
+  // Volcado Intel HEX con inyeccion de XOFF: argv[7] es la posicion de la linea a partir
+  // de la cual el receptor pide la pausa. Sin ese argumento no se ejecuta, para no alterar
+  // la comparacion byte a byte de check_wire.py contra el simulador.
+  if(argc>7){
+    g_xoffAfter = strtol(argv[7], nullptr, 10);
+    displayHistoryHex(0);
+    FILE* ff = fopen("flow.txt", "w");
+    fprintf(ff, "%ld %ld %ld %zu\n", g_xoffAfter, g_xoffSeenAt, g_xonSeenAt, g_wire.size());
+    fclose(ff);
+  }
 
   // Solo si se pide un intervalo: check_wire.py compara byte a byte contra el simulador,
   // y estas dos lineas pertenecen a la respuesta de INT, no a la secuencia de arranque.

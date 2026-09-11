@@ -42,6 +42,7 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | `v1.0.0` | 24.148 | 74 % | -- |
 | `v1.3.0` (firmware 2.3) | 26.838 | 82 % | -- |
 | firmware 2.7, antes de la tanda G1--G11 | 27.714 | 85 % | 869 B (42 %) |
+| firmware 2.8, con G1 + G6 + G4 (firmware) | 28.220 | 87 % | 906 B (44 %) |
 
 ## AJUSTES DE PLACA OBLIGATORIOS
 
