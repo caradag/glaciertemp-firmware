@@ -295,35 +295,33 @@ void printBoardId(){
   out << NORMALTEXT;
 }
 
-// Identificador corto: 32 bits derivados de los 64 de fabrica, en 8 digitos hexadecimales.
+// Identificador corto de la placa, con la forma "GT001-XXXXXX".
 //
-// Se obtiene por CRC y NO recortando bytes. Winbond no documenta como esta compuesto el
-// numero de serie, y en los identificadores de silicio es habitual que los bytes altos
-// codifiquen lote y oblea: dos placas compradas juntas --que son justamente las que uno
-// tiene-- serian las mas expuestas a compartirlos. El CRC reparte de forma uniforme sea cual
-// sea esa estructura, asi que la probabilidad de choque se puede calcular: con 100 placas es
-// de una entre 870.000.
+//   GT      tipo de hardware, de BOARD_TYPE
+//   001     REVISION del hardware, de BOARD_HW_VERSION -- no la version de firmware
+//   XXXXXX  los seis ultimos digitos hexadecimales del numero de serie de fabrica
 //
-// El identificador completo sigue estando en el comando ID y en la cabecera INFO. Este es
-// para escribirlo, leerlo en voz alta y nombrar ficheros.
-unsigned long crc32Bytes(const byte* data, byte len){
-  unsigned long crc=0xFFFFFFFFUL;
-  for(byte i=0;i<len;i++){
-    crc ^= data[i];
-    for(byte b=0;b<8;b++){
-      crc = (crc & 1UL) ? ((crc>>1) ^ 0xEDB88320UL) : (crc>>1);
-    }
-  }
-  return crc ^ 0xFFFFFFFFUL;
-}
-
+// Los seis digitos son los bytes 5, 6 y 7 completos, es decir los 24 bits bajos de los 64
+// --dos digitos por byte. Antes se derivaban 32 bits por CRC precisamente para NO recortar:
+// Winbond no documenta como esta compuesto el numero de serie, y en los identificadores de
+// silicio es habitual que los bytes altos codifiquen lote y oblea. Medido sobre las placas
+// reales resulto lo contrario --solo varian los digitos bajos--, asi que recortar identifica
+// igual y produce un codigo que se puede leer en voz alta y escribir en una libreta.
+//
+// El precio son 24 bits en vez de 32: entre 100 placas la probabilidad de choque sube de
+// 1/870.000 a 1/3.400. Con una flota de decenas, la unicidad se comprueba una vez leyendo
+// todos los identificadores en vez de confiarla al calculo.
+//
+// El identificador completo de 64 bits sigue estando en el comando ID, en la cabecera INFO
+// y en la linea de arranque, y es el que desempata si alguna vez hiciera falta.
 void printShortBoardId(){
   byte id[8];
   readFlashUniqueID(id);
-  unsigned long sid=crc32Bytes(id,8);
-  out << NOSPACER;
-  for(int8_t i=28;i>=0;i-=4){
-    out << hexDigit((byte)(sid>>i));
+  // Un solo literal y no tres elementos: el preprocesador los concatena en tiempo de
+  // compilacion, asi que cuesta una cadena en flash en vez de tres llamadas al stream.
+  out << NOSPACER << F(BOARD_TYPE BOARD_HW_VERSION "-");
+  for(byte i=5;i<8;i++){
+    out << hexDigit(id[i]>>4) << hexDigit(id[i]);
   }
   out << NORMALTEXT;
 }

@@ -80,7 +80,17 @@
 */
 
 #include "./lightOStream.h"
-char buf[127];
+// Buffer de UNA linea. Es un limite duro y silencioso: la linea solo se emite cuando el
+// stream recibe el '\n', y si el buffer se llena antes, ese '\n' no cabe, la linea no se
+// vacia nunca y ARRASTRA a las siguientes hasta que algo la limpie. No se pierde una linea:
+// se pierden todas las que vengan detras.
+//
+// Con 127 cabian 126 caracteres contando el salto, y la cabecera INFO ya ocupaba 123. El
+// identificador corto con formato "GT001-XXXXXX" le sumo cuatro y la dejo justo un byte por
+// encima, llevandose por delante tambien la cabecera de LOGB que venia despues. 160 deja 33
+// bytes de margen y cuesta 33 bytes de RAM, con ~1,1 kB libres.
+#define OUT_BUFFER_SIZE 160
+char buf[OUT_BUFFER_SIZE];
 lightOStream out(buf, sizeof(buf));
 
 void displayDateVec(byte *dateVec, bool showTimezone=true);
@@ -759,8 +769,20 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "2.7"
-#define PROTOCOL_VERSION 2
+#define FIRMWARE_VERSION "2.8"
+#define PROTOCOL_VERSION 3
+
+// Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
+// los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
+//
+//   BOARD_TYPE        que tipo de placa es (Glacier Temp)
+//   BOARD_HW_VERSION  que REVISION del hardware es, no que firmware corre
+//
+// FIRMWARE_VERSION cambia con cada arreglo; BOARD_HW_VERSION solo cuando cambia la placa
+// fisica. Como son constantes de compilacion, una revision nueva de placa exige su propia
+// compilacion con este numero cambiado.
+#define BOARD_TYPE "GT"
+#define BOARD_HW_VERSION "001"
 
 // La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
 // pasan de ahi: a 230400 la placa y el modulo sencillamente no se entienden. Ademas es la

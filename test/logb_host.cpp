@@ -6,6 +6,8 @@
 // el simulador y contra el lector de la app que los tres hablan el mismo
 // idioma, sin placa y sin telefono.
 #include "Arduino.h"
+// Constantes del sketch, extraidas: hacen falta antes que las funciones.
+#include "extracted_defs.h"
 
 std::vector<unsigned char> g_wire;
 std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
@@ -22,10 +24,11 @@ long int10Pow(byte power);
 long intPow(int power,int base){ long o=1; for(int i=0;i<power;i++) o*=base; return o; }
 long int10Pow(byte power){ return intPow(power,10); }
 
-// El mismo tamano que el firmware real: el stream descarta en silencio lo que
-// no cabe antes del salto de linea, asi que un banco con un buffer mas grande
-// no veria ese fallo.
-static char outBuf[127];
+// El mismo tamano que el firmware real, EXTRAIDO y no copiado. Un banco con un buffer
+// mas grande no veria el fallo, y uno con el tamano copiado a mano dejaria de verlo en
+// cuanto alguien cambiara el del sketch: la linea solo se emite al recibir el '\n', asi
+// que un buffer que se llena antes se come esa linea y todas las siguientes.
+static char outBuf[OUT_BUFFER_SIZE];
 lightOStream out(outBuf, sizeof(outBuf));
 void ln(){ out << NL; }
 

@@ -1,4 +1,5 @@
 # Generados por build.sh; el codigo real vive en el sketch.
 extracted.h
+extracted_defs.h
 logb_host
 *.bin
