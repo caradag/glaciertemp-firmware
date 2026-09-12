@@ -75,6 +75,20 @@ def main():
         elif int(proto.group(1)) < 3:
             fails.append(f"INFO anuncia proto={proto.group(1)}, se esperaba 3 o mas")
 
+    # --- el comando ID da la misma linea que el arranque --------------------
+    #
+    # Antes imprimia solo los 16 digitos del completo. Quien teclea ID en el terminal
+    # quiere el corto --el que nombra la placa-- sin perder el completo, y la linea del
+    # arranque ya tiene esa forma: no hay razon para que sean dos formatos distintos.
+    lineas_id = [l for l in text.split("\n") if l.startswith("Board ID:")]
+    if len(lineas_id) < 2:
+        fails.append(f"el comando ID no imprime la linea completa: {len(lineas_id)} "
+                     f"lineas 'Board ID:' (arranque + comando, se esperaban 2)")
+    elif lineas_id[0] != lineas_id[1]:
+        fails.append(f"ID y el arranque dan formatos distintos:\n"
+                     f"      arranque: {lineas_id[0]}\n"
+                     f"      comando:  {lineas_id[1]}")
+
     if "LOGB begin" not in text:
         fails.append("la cabecera de LOGB no aparece (posible desbordamiento del buffer)")
 
@@ -102,7 +116,7 @@ def main():
         for f in fails:
             print("FALLA:", f)
         return 1
-    print("OK: arranque, INFO y margen de buffer correctos")
+    print(f"OK: arranque, INFO, comando ID y margen de buffer correctos")
     return 0
 
 

@@ -769,7 +769,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.1"
+#define FIRMWARE_VERSION "3.2"
 #define PROTOCOL_VERSION 4
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1238,9 +1238,10 @@ void loop() {
         printVersion();
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina
         printMetadata();
-      }else if(!strcasecmp("ID", inputStr)){// Identificador unico de la placa
+      }else if(!strcasecmp("ID", inputStr)){// Identificador de la placa, corto y completo
+        // Sin ln() detras: printBoardIdLine ya cierra la linea, y el salto de mas dejaba
+        // una linea en blanco en el terminal.
         printBoardIdStandalone();
-        ln();
       }else if(!strcasecmp("H", inputStr)){// Prints help
         printHelp();
       }else if(!strncasecmp("XON", inputStr, 3)){// Prints help  

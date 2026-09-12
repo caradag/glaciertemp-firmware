@@ -125,6 +125,9 @@ int main(int argc, char** argv){
   fprintf(stderr, "flash encendida tras imprimir el ID: %s\n",
           g_flashPowered ? "SI" : "NO -- los avisos de estado saldrian falsos");
   flashReportStatus();
+  // El comando ID, para comprobar que da la MISMA linea que el arranque: es lo que una
+  // persona teclea cuando quiere el identificador, y antes daba solo los 16 digitos.
+  printBoardIdStandalone();
   printVersion();
   printMetadata();
   // argv[11] cancela durante el volcado BINARIO; argv[10], durante el Intel HEX. Van

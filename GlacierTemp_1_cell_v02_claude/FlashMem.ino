@@ -326,12 +326,18 @@ void printShortBoardId(){
   out << NORMALTEXT;
 }
 
-// Linea etiquetada para el arranque y para el bloque de informacion humano. El comando ID
-// sigue imprimiendo el identificador completo a secas, que es lo que una app quiere leer.
-// Para el comando ID: es una operacion aislada, asi que enciende y vuelve a apagar.
+// El comando ID: la MISMA linea que sale en el arranque, con el identificador corto y el
+// completo entre parentesis.
+//
+// Antes imprimia solo los 16 digitos del completo, con el argumento de que es lo que una app
+// quiere leer. Pero ninguna app lee de aqui: el contrato de maquina es la cabecera INFO, que
+// trae los dos en campos con nombre. Este comando lo escribe una persona en el terminal, y
+// lo que necesita es el corto --el que nombra la placa-- sin perder el completo.
+//
+// Es una operacion aislada, asi que enciende la flash y vuelve a apagarla.
 void printBoardIdStandalone(){
   memSendControlByte(POWER_UP);
-  printBoardId();
+  printBoardIdLine();
   flashPowerDown();
 }
 

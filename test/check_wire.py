@@ -109,25 +109,34 @@ FW, PROTO = const("FIRMWARE_VERSION"), const("PROTOCOL_VERSION")
 TIPO, HW = const("BOARD_TYPE"), const("BOARD_HW_VERSION")
 SID = f"{TIPO}{HW}-556677"      # los seis ultimos digitos del identificador falso
 
+# Las lineas se buscan por CONTENIDO y no por indice. Con indices fijos, anadir una linea
+# al banco --p.ej. ejecutar el comando ID para comprobarlo-- desplaza todas las de abajo y
+# hace fallar aserciones que no tienen nada que ver con el cambio.
 TEXTO = [
-    (5, f"Board ID: {SID}  (full 0011223344556677)".encode(),
+    (f"Board ID: {SID}  (full 0011223344556677)".encode(),
         "el identificador corto y el completo, bien espaciados"),
-    (6, b"Flash status SR1/SR2: 0x00/0x02",
+    (b"Flash status SR1/SR2: 0x00/0x02",
         "los bytes de estado crudos, que distinguen un bloqueo real de un chip que no contesta"),
-    (7, f"fw={FW} proto={PROTO}".encode(), "VER"),
+    (f"fw={FW} proto={PROTO}".encode(), "VER"),
 ]
 # El corto son los SEIS ULTIMOS digitos hexadecimales del completo, con el prefijo de tipo y
 # revision de hardware. Se comprueba derivandolo del completo y no copiandolo: asi el test
 # sigue valiendo si cambia el identificador falso del banco.
 completo = "0011223344556677"
-ok = f"{TIPO}{HW}-{completo[-6:]}".encode() in lines[5]
+esperado_corto = f"{TIPO}{HW}-{completo[-6:]}".encode()
+ok = any(esperado_corto in l for l in lines)
 bad += not ok
 print(f"{'OK  ' if ok else 'FALLA'} el corto es tipo+revision+los seis ultimos digitos del completo")
 
-for i, esperado, desc in TEXTO:
-    ok = lines[i] == esperado
+for esperado, desc in TEXTO:
+    ok = esperado in lines
     bad += not ok
     print(f"{'OK  ' if ok else 'FALLA'} {desc}")
+    if not ok:
+        parecidas = [l for l in lines if l[:12] == esperado[:12]]
+        print(f"      esperado {esperado}")
+        for l in parecidas[:2]:
+            print(f"      parecida {l}")
     if not ok:
         print(f"      esperado {esperado!r}\n      leido    {lines[i]!r}")
 
