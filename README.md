@@ -47,6 +47,7 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.0, LOGH con volcado rapido | 28.346 | 87 % | 906 B (44 %) |
 | firmware 3.1, cancelacion de volcado | 28.484 | 87 % | 907 B (44 %) |
 | firmware 3.2, ID con corto y completo | 28.464 | 87 % | 907 B (44 %) |
+| firmware 3.3, sin prompt tras LOGB/LOGH | 28.476 | 87 % | 907 B (44 %) |
 
 ## AJUSTES DE PLACA OBLIGATORIOS
 

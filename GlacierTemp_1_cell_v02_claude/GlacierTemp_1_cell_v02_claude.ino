@@ -769,7 +769,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.2"
+#define FIRMWARE_VERSION "3.3"
 #define PROTOCOL_VERSION 4
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1214,6 +1214,12 @@ void loop() {
           }
         }
         dumpLogBinary(a,b,fast);
+        // Sin el "Waiting commands" de despues. Un volcado ya se cierra con su propia linea
+        // --"LOGB end" o "LOGB aborted"-- que dice lo mismo y ademas dice si lo que hay esta
+        // completo. El anuncio son 35 bytes mas, y LOGB no se escribe a mano: lo manda la
+        // app, troceado, miles de veces en una descarga por radio. Ahi esos 35 bytes por
+        // peticion son casi cien kilobytes de texto que no lee nadie.
+        hiddenCommand=true;
       }else if(!strncasecmp("logh", inputStr, 4)){// Volcado crudo; LOGH[=n[,baud]]
         // Sin argumentos se vuelca la memoria entera. "LOGH=n" la acota a n bytes, y un
         // segundo valor pide que los REGISTROS Intel HEX viajen a esa velocidad. Como en
@@ -1229,6 +1235,8 @@ void loop() {
           }
         }
         displayHistoryHex(hexBytes, fast);
+        // Igual que LOGB: el volcado se cierra solo, con el registro de fin de fichero.
+        hiddenCommand=true;
       }else if(!strcasecmp("CALC", inputStr)){// Cuanto dura la memoria libre
         // Estaba anunciado en la lista de comandos de arriba desde hacia tiempo y no
         // existia: escribirlo devolvia "comando desconocido". Ahora responde lo mismo que
