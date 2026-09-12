@@ -45,6 +45,7 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 2.8, con G1 + G6 + G4 (firmware) | 28.220 | 87 % | 906 B (44 %) |
 | firmware 2.9, LOGH vuelca la memoria entera | 28.152 | 86 % | 906 B (44 %) |
 | firmware 3.0, LOGH con volcado rapido | 28.346 | 87 % | 906 B (44 %) |
+| firmware 3.1, cancelacion de volcado | 28.484 | 87 % | 907 B (44 %) |
 
 ## AJUSTES DE PLACA OBLIGATORIOS
 

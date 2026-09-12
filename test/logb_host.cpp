@@ -13,6 +13,9 @@ std::vector<unsigned char> g_wire;
 std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 FakeSerial Serial;
 long g_xoffAfter = -1;
+long g_cancelAfter = -1;
+bool g_cancelDone = false;
+long g_cancelSeenAt = -1;
 bool g_xoffDone = false;
 bool g_xonDone = false;
 long g_xoffSeenAt = -1;
@@ -79,6 +82,11 @@ void getCurrentTime(){}
 // Entorno de displayHistoryHex. El banco usa el mismo tamano de registro para el log
 // almacenado y para esta compilacion, asi que no hay desajuste que simular.
 bool logFormatMismatch = false;
+
+// La bandera de cancelacion del volcado. No se extrae porque extract.py saca funciones y
+// constantes, no variables globales; declararla aqui es seguro porque si el firmware la
+// renombra el banco deja de COMPILAR, que es el tipo de fallo que se ve enseguida.
+bool dumpAborted = false;
 #define MAX_RECORD_BYTES 12
 #define LOG_SIGNATURE 0x100F
 uint16_t getUInt(int){ return g_sig; }
@@ -119,7 +127,20 @@ int main(int argc, char** argv){
   flashReportStatus();
   printVersion();
   printMetadata();
+  // argv[11] cancela durante el volcado BINARIO; argv[10], durante el Intel HEX. Van
+  // separados porque los dos volcados corren uno detras del otro en este banco, y una sola
+  // posicion siempre caeria en el primero.
+  if(argc>11){
+    g_cancelAfter = strtol(argv[11], nullptr, 10);
+  }
   dumpLogBinary(from, to, fast);
+  {
+    FILE* bf2 = fopen("cancel_logb.txt", "w");
+    fprintf(bf2, "%ld %ld %zu\n", g_cancelAfter, g_cancelSeenAt, g_wire.size());
+    fclose(bf2);
+  }
+  // Se reinicia el estado para que la fase de Intel HEX empiece limpia.
+  g_cancelAfter = -1; g_cancelDone = false; g_cancelSeenAt = -1;
 
   // Volcado Intel HEX con inyeccion de XOFF: argv[7] es la posicion de la linea a partir
   // de la cual el receptor pide la pausa. Sin ese argumento no se ejecuta, para no alterar
@@ -131,12 +152,16 @@ int main(int argc, char** argv){
     // veintitres megas por cada caso para comprobar un sobrepaso de medio kilobyte.
     unsigned long hexBytes = (argc>8) ? strtoul(argv[8], nullptr, 10) : 0;
     unsigned long hexFast  = (argc>9) ? strtoul(argv[9], nullptr, 10) : 0;
+    if(argc>10) g_cancelAfter = strtol(argv[10], nullptr, 10);
     g_baudChanges.clear();          // solo interesan los del volcado crudo
     displayHistoryHex(hexBytes, hexFast);
     FILE* ff = fopen("flow.txt", "w");
     fprintf(ff, "%ld %ld %ld %zu\n", g_xoffAfter, g_xoffSeenAt, g_xonSeenAt, g_wire.size());
     for(auto& c : g_baudChanges) fprintf(ff, "%zu %lu\n", c.first, c.second);
     fclose(ff);
+    FILE* cf = fopen("cancel.txt", "w");
+    fprintf(cf, "%ld %ld %zu\n", g_cancelAfter, g_cancelSeenAt, g_wire.size());
+    fclose(cf);
   }
 
   // Solo si se pide un intervalo: check_wire.py compara byte a byte contra el simulador,

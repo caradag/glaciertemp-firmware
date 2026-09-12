@@ -658,11 +658,35 @@ unsigned int crc16Ccitt(const byte* data, byte len, unsigned int crc){
 
 #define FLOW_XOFF 0x13
 #define FLOW_XON  0x11
+// CAN de ASCII, el byte convencional para "cancela lo que estas haciendo".
+#define FLOW_CANCEL 0x18
+
+// Lo pone flowControlCheck() y lo consultan los bucles de volcado para pararse.
+bool dumpAborted=false;
+
+// Atiende la pausa y la CANCELACION durante un volcado.
+//
+// La cancelacion hace falta porque parar de leer no para de emitir. El anfitrion que
+// abandona una descarga larga deja a la placa volcando megabytes contra un enlace que ya no
+// lee, y esa cola se va colando despues como si fuera la respuesta de los comandos
+// siguientes: uno escribe VER y recibe bloques del volcado anterior durante minutos. Sin una
+// forma de decirle a la placa que pare, el anfitrion no tiene salida -- solo puede tragarse
+// la cola entera o reiniciar la placa.
+//
+// Se distingue de XOFF porque son dos cosas distintas: XOFF dice "espera, no doy abasto" y
+// CAN dice "ya no lo quiero". Reutilizar XOFF para las dos obligaria a adivinar cual es por
+// cuanto tarda en llegar el XON.
 void flowControlCheck(){
   if(!Serial.available()){
     return;
   }
-  if(Serial.peek()!=FLOW_XOFF){
+  int c=Serial.peek();
+  if(c==FLOW_CANCEL){
+    Serial.read();
+    dumpAborted=true;
+    return;
+  }
+  if(c!=FLOW_XOFF){
     return;
   }
   Serial.read();
@@ -670,8 +694,17 @@ void flowControlCheck(){
   // Con un tope: si el receptor desaparece tras pedir la pausa, el logger no
   // puede quedarse esperando para siempre y perder la ventana de medicion.
   while(millis()-t0 < 30000UL){
-    if(Serial.available() && Serial.read()==FLOW_XON){
-      return;
+    if(Serial.available()){
+      int d=Serial.read();
+      if(d==FLOW_XON){
+        return;
+      }
+      // Cancelar durante la pausa tambien vale: es justo cuando el anfitrion se da cuenta
+      // de que no va a poder con el resto.
+      if(d==FLOW_CANCEL){
+        dumpAborted=true;
+        return;
+      }
     }
   }
 }
@@ -756,7 +789,11 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec, unsigned long fas
   }
 
   byte buf[LOGB_CHUNK];
+  dumpAborted=false;
   for(unsigned int blk=0; blk<nBlocks; blk++){
+    if(dumpAborted){
+      break;
+    }
     unsigned long blockStart=startAddr + (unsigned long)blk*LOGB_BLOCK;
     unsigned long left=nBytes - (unsigned long)blk*LOGB_BLOCK;
     unsigned int blockLen=(left>=LOGB_BLOCK) ? LOGB_BLOCK : (unsigned int)left;
@@ -775,6 +812,9 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec, unsigned long fas
       // justo lo que trata de evitar. Comprobarlo cada 32 cuesta una lectura de
       // registro.
       flowControlCheck();
+      if(dumpAborted){
+        break;
+      }
       byte n=(blockLen-done >= LOGB_CHUNK) ? LOGB_CHUNK : (byte)(blockLen-done);
       readBytesFromFlash(blockStart+done, buf, n);
       Serial.write(buf, n);
@@ -789,7 +829,15 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec, unsigned long fas
   if(fastBaud!=0){
     switchBaud(BAUDRATE);
   }
-  out << F("LOGB end\n");
+  // Se cierra siempre con una linea, y distinta segun el caso: el anfitrion necesita saber
+  // si lo que tiene esta completo o lo dejo a medias, y ese texto es ademas la marca de que
+  // la placa dejo de emitir y la cola esta limpia.
+  if(dumpAborted){
+    out << F("LOGB aborted\n");
+    dumpAborted=false;
+  }else{
+    out << F("LOGB end\n");
+  }
   flashPowerDown();
 }
 
@@ -939,6 +987,7 @@ void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
   }
 
   unsigned long logDumpStart=millis();
+  dumpAborted=false;
   if(nBytes==0){
     out << F("Log empty\n");
   }else{
@@ -956,6 +1005,9 @@ void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
       // 256 bytes de dato son ~688 de linea entre comprobacion y comprobacion.
       if((a & 0xFF)==0){
         flowControlCheck();
+        if(dumpAborted){
+          break;
+        }
       }
       unsigned long left=nBytes-a;
       byte n = (left>=16) ? 16 : (byte)left;
@@ -968,7 +1020,12 @@ void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
       readBytesFromFlash(a,b,n);
       ihexRecord(0x00, (unsigned int)(a & 0xFFFFUL), b, n);
     }
-    ihexRecord(0x01, 0x0000, NULL, 0);   // end of file
+    // El registro de fin de fichero solo se emite si el volcado llego al final: es lo que
+    // le dice al anfitrion que el fichero esta completo, y ponerlo tras una cancelacion
+    // seria firmar como completo algo que no lo esta.
+    if(!dumpAborted){
+      ihexRecord(0x01, 0x0000, NULL, 0);   // end of file
+    }
   }
   // Se vuelve SIEMPRE y fuera de las dos ramas. La linea no puede quedarse en la velocidad
   // rapida pase lo que pase, y el camino del volcado vacio --que no emite un solo registro--
@@ -980,7 +1037,10 @@ void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
   if(fastBaud!=0){
     switchBaud(BAUDRATE);
   }
-  if(nBytes!=0){
+  if(dumpAborted){
+    out << F("LOGH aborted\n");
+    dumpAborted=false;
+  }else if(nBytes!=0){
     unsigned long elapsedMs=millis()-logDumpStart;
     out << nBytes << F("bytes in") << '\xB2' << elapsedMs/10 << F("seconds\n");
   }

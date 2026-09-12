@@ -33,6 +33,9 @@ extern std::vector<std::pair<size_t,unsigned long>> g_baudChanges;
 // sobrepaso, que es exactamente lo que hay que medir. Un volcado que no comprueba nunca
 // tiene sobrepaso infinito y no se distingue mirando los datos.
 extern long g_xoffAfter;     // posicion a partir de la cual hay un XOFF esperando; -1 nunca
+extern long g_cancelAfter;   // posicion a partir de la cual hay un CAN esperando; -1 nunca
+extern bool g_cancelDone;
+extern long g_cancelSeenAt;  // posicion de la linea cuando el firmware lo leyo
 extern bool g_xoffDone;      // ya lo leyo el firmware
 extern bool g_xonDone;       // ya se le entrego el XON que lo reanuda
 extern long g_xoffSeenAt;    // posicion de la linea cuando lo leyo
@@ -50,10 +53,18 @@ struct FakeSerial {
     return g_xoffAfter>=0 && !g_xoffDone && (long)g_wire.size()>=g_xoffAfter;
   }
   bool xonPending(){ return g_xoffDone && !g_xonDone; }
+  bool cancelPending(){
+    return g_cancelAfter>=0 && !g_cancelDone && (long)g_wire.size()>=g_cancelAfter;
+  }
 
-  int available(){ return (xoffPending() || xonPending()) ? 1 : 0; }
-  int peek(){ return xoffPending() ? 0x13 : (xonPending() ? 0x11 : -1); }
+  // La cancelacion va PRIMERO: si el receptor pide las dos cosas, lo que quiere es parar.
+  int available(){ return (cancelPending() || xoffPending() || xonPending()) ? 1 : 0; }
+  int peek(){
+    if(cancelPending()) return 0x18;
+    return xoffPending() ? 0x13 : (xonPending() ? 0x11 : -1);
+  }
   int read(){
+    if(cancelPending()){ g_cancelDone=true; g_cancelSeenAt=(long)g_wire.size(); return 0x18; }
     if(xoffPending()){ g_xoffDone=true; g_xoffSeenAt=(long)g_wire.size(); return 0x13; }
     if(xonPending()){ g_xonDone=true; g_xonSeenAt=(long)g_wire.size(); return 0x11; }
     return -1;
