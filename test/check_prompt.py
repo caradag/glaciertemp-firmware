@@ -29,6 +29,7 @@ SKETCH = HERE.parent / "GlacierTemp_1_cell_v02_claude" / "GlacierTemp_1_cell_v02
 SILENCIOSAS = {
     "logb": "el volcado se cierra con LOGB end o LOGB aborted",
     "logh": "el volcado se cierra con el registro de fin de fichero",
+    "LIVE": "se cierra con LIVE end o LIVE timeout, que ademas dicen por que paro",
     "ER":   "son errores del modulo Bluetooth, no un comando del usuario",
 }
 

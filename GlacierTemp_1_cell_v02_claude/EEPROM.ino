@@ -402,6 +402,178 @@ void logField(long value, bool invalid, byte decimals, byte width, bool forceSig
   out << (char)(DECIMALS+decimals) << value;
 }
 
+// Los nombres de las columnas, en el mismo orden en que salen los valores.
+//
+// Vive aparte porque lo usan DOS presentaciones de los mismos campos: el volcado
+// del log y el modo LIVE. Tenerlo duplicado seria dos cadenas de #if que hay que
+// acordarse de cambiar a la vez, y la que se olvida no da error de compilacion:
+// da columnas con el nombre cambiado, que es peor.
+void printLogHeader(bool compact){
+  if(compact){
+    out << NOSPACER << F("Time");
+  }else{
+    out << NOSPACER << (char)(PAD+8) << F("Sample #") << ',' << F("                Time");
+  }
+#if LOG_VOLTAGE
+  logHeader(F("Volt"),    W_VOLT,   compact);
+#endif
+#if LOG_HDC_TEMP
+  logHeader(F("Temp°C"),  W_TEMP,   compact);
+#endif
+#if LOG_HDC_RH
+  logHeader(F("RH"),      W_RH,     compact);
+#endif
+#if LOG_TMP119
+  logHeader(F("HAtemp°C"),W_TEMPHA, compact);
+#endif
+#if LOG_DS18B20
+  for(byte ds=0; ds<LOG_DS18B20; ds++){
+    char label[8];
+    ds18b20Label(ds,label);
+    logHeaderRam(label, W_TEMPDS, compact);
+  }
+#endif
+#if LOG_A0
+  logHeader(F(A0_NAME),   W_ANALOG, compact);
+#endif
+#if LOG_A1
+  logHeader(F(A1_NAME),   W_ANALOG, compact);
+#endif
+#if LOG_A2
+  logHeader(F(A2_NAME),   W_ANALOG, compact);
+#endif
+#if LOG_A3
+  logHeader(F(A3_NAME),   W_ANALOG, compact);
+#endif
+  out << NL;
+}
+
+// ================= LIVE: los sensores en directo, sin registrar ==================
+//
+// NO escribe en la flash. Es para mirar --apuntar el sensor a algo y ver como
+// responde-- y guardar cada lectura ensuciaria el registro con datos que no
+// corresponden a la cadencia configurada, ademas de gastar memoria que hace
+// falta para lo otro.
+//
+// El formato de la linea es el mismo de una fila compacta de LOGC, precedida de
+// "LIVE". Asi el anfitrion no tiene que aprender un formato nuevo: las columnas
+// son las que anuncia la firma del log, que ya conoce por INFO, en el mismo
+// orden y con las mismas unidades.
+//
+// TOPE DE TIEMPO. Mientras esto corre la placa no duerme ni registra, igual que
+// durante un volcado largo. La diferencia es que un volcado termina solo y esto
+// no, asi que lleva un tope: si el anfitrion desaparece --la pantalla del
+// telefono se apaga, el cable se va-- la placa vuelve sola a lo suyo en vez de
+// quedarse midiendo para nadie hasta agotar la bateria.
+
+#define LIVE_MAX_MS     600000UL   // diez minutos sin que nadie diga nada
+#define LIVE_MIN_MS        200UL   // por debajo de esto no da tiempo ni a leer
+#define LIVE_MAX_PERIOD  60000UL
+
+// Una muestra, leida de los sensores en RAM y no de la flash.
+void printLiveSample(int battMv){
+  out << NOSPACER << F("LIVE") << ' ';
+  displayUnixTime(currentTime, false);
+  out << NOSPACER;
+#if LOG_VOLTAGE
+  logField(battMv/10, false, 2, W_VOLT, false, true);
+#else
+  (void)battMv;
+#endif
+#if LOG_HDC_TEMP
+  logField(currentTemp, currentTemp==INVALID_TEMP, 2, W_TEMP, true, true);
+#endif
+#if LOG_HDC_RH
+  logField(currentRH, currentRH<0, 1, W_RH, false, true);
+#endif
+#if LOG_TMP119
+  logField(currentTempHA, currentTempHA==INVALID_TEMP_HA, 2, W_TEMPHA, true, true);
+#endif
+#if LOG_DS18B20
+  for(byte ds=0; ds<LOG_DS18B20; ds++){
+    logField(currentTempDS[ds], currentTempDS[ds]==INVALID_TEMP, 2, W_TEMPDS, true, true);
+  }
+#endif
+#if LOG_A0
+  logField(currentAnalog[0], currentAnalog[0]==INVALID_ANALOG, 3, W_ANALOG, false, true);
+#endif
+#if LOG_A1
+  logField(currentAnalog[1], currentAnalog[1]==INVALID_ANALOG, 3, W_ANALOG, false, true);
+#endif
+#if LOG_A2
+  logField(currentAnalog[2], currentAnalog[2]==INVALID_ANALOG, 3, W_ANALOG, false, true);
+#endif
+#if LOG_A3
+  logField(currentAnalog[3], currentAnalog[3]==INVALID_ANALOG, 3, W_ANALOG, false, true);
+#endif
+  out << PAD << NL;
+}
+
+// Mide y publica hasta que llegue algo por el puerto o se agote el tope.
+//
+// Para con CUALQUIER byte y no solo con "stop": un humano en el terminal pulsa
+// Enter, la app manda la palabra, y los dos esperan lo mismo. Despues se traga
+// lo que quede de esa linea, porque si no el "top" de "stop" se quedaria en el
+// buffer y saldria como comando no reconocido.
+void liveData(unsigned long periodMs){
+  if(periodMs<LIVE_MIN_MS){
+    periodMs=LIVE_MIN_MS;
+  }
+  if(periodMs>LIVE_MAX_PERIOD){
+    periodMs=LIVE_MAX_PERIOD;
+  }
+  // Se anuncia el periodo porque el anfitrion no lo eligio necesariamente: si
+  // pidio uno fuera de rango, este es el que hay.
+  out << NOSPACER << F("LIVE begin every") << ' ' << periodMs << F("ms") << NL;
+  printLogHeader(true);
+  unsigned long inicio=millis();
+  bool parado=false;
+  while(millis()-inicio < LIVE_MAX_MS){
+    getCurrentTime();
+    // Los mismos sensores que takeMeasurement(), y en el mismo orden: la
+    // bateria se lee mientras la referencia INTERNA sigue en vigor, antes de
+    // que los canales analogicos la cambien a VCC y la devuelvan.
+#if LOG_HDC_TEMP || LOG_HDC_RH
+    getTempAndRH();
+#endif
+#if LOG_TMP119
+    getHighAccuracyTemp();
+#endif
+#if LOG_DS18B20
+    getDS18B20Temp();
+#endif
+    int battMv=getBatteryVoltage();
+#if ANALOG_CHANNELS
+    readAnalogChannels();
+#endif
+    printLiveSample(battMv);
+    Serial.flush();
+    unsigned long espera=millis();
+    while(millis()-espera < periodMs){
+      if(Serial.available()){
+        parado=true;
+        break;
+      }
+    }
+    if(parado){
+      break;
+    }
+  }
+  if(parado){
+    unsigned long q=millis();
+    while(millis()-q < 60){
+      if(Serial.available()){
+        Serial.read();
+        q=millis();
+      }
+    }
+  }
+  // Dos cierres distintos a proposito: el anfitrion necesita saber si paro
+  // porque se lo pidieron o porque se acabo el tiempo, que es lo que le dice si
+  // tiene que volver a pedirlo.
+  out << (parado ? F("LIVE end\n") : F("LIVE timeout\n"));
+}
+
 // mode selects one of three presentations of the same records:
 //   SHOW_ALL          padded, column-aligned, one header, easy to read on screen
 //   SHOW_LAST         the same layout, but only the record just written
@@ -435,44 +607,7 @@ void logField(long value, bool invalid, byte decimals, byte width, bool forceSig
     out << F("The values below are misparsed. Re-flash the firmware that wrote them to read them.\n");
   }
   if (nSamples>0){
-    // We print the column headers
-    if(compact){
-      out << NOSPACER << F("Time");
-    }else{
-      out << NOSPACER << (char)(PAD+8) << F("Sample #") << ',' << F("                Time");
-    }
-#if LOG_VOLTAGE
-    logHeader(F("Volt"),    W_VOLT,   compact);
-#endif
-#if LOG_HDC_TEMP
-    logHeader(F("Temp°C"),  W_TEMP,   compact);
-#endif
-#if LOG_HDC_RH
-    logHeader(F("RH"),      W_RH,     compact);
-#endif
-#if LOG_TMP119
-    logHeader(F("HAtemp°C"),W_TEMPHA, compact);
-#endif
-#if LOG_DS18B20
-    for(byte ds=0; ds<LOG_DS18B20; ds++){
-      char label[8];
-      ds18b20Label(ds,label);
-      logHeaderRam(label, W_TEMPDS, compact);
-    }
-#endif
-#if LOG_A0
-    logHeader(F(A0_NAME),   W_ANALOG, compact);
-#endif
-#if LOG_A1
-    logHeader(F(A1_NAME),   W_ANALOG, compact);
-#endif
-#if LOG_A2
-    logHeader(F(A2_NAME),   W_ANALOG, compact);
-#endif
-#if LOG_A3
-    logHeader(F(A3_NAME),   W_ANALOG, compact);
-#endif
-    out << NL;
+    printLogHeader(compact);
 
     unsigned long start=1;
     if(mode==SHOW_LAST){

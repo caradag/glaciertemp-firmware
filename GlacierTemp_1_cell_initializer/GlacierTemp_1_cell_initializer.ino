@@ -289,6 +289,7 @@ counter++;
               "I$Info\n"
               "INFO$Machine-readable header\n"
               "M$Take measurement\n"
+              "LIVE$Sensors live, no logging (=n ms)\n"
               "GPS$Get GPS time\n"
               "MSG$Send satellite message\n"
               "S[x]$Stay in command mode for x min\n"

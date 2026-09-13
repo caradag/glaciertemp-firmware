@@ -769,8 +769,8 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.3"
-#define PROTOCOL_VERSION 4
+#define FIRMWARE_VERSION "3.4"
+#define PROTOCOL_VERSION 5
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
 // los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
@@ -1058,6 +1058,7 @@ void loop() {
       // CALC     Calculates when available memory would run out
       // LOG      Dump the whole data log, column aligned
       // LOGC     Dump the whole data log, compact (no sample number, no spaces)
+      // LIVE     Read the sensors continuously without logging (LIVE=n for every n ms)
       // LOGH     Dump the raw log bytes as Intel HEX, decoding nothing (LOGH=n for n bytes)
       // GPS      Aquire GPS position and time
       // H        Help
@@ -1097,6 +1098,19 @@ void loop() {
       }else if(!strcasecmp("M", inputStr)){
         getCurrentTime();
         takeMeasurement();   
+      }else if(!strncasecmp("LIVE", inputStr, 4)){// Sensores en directo; LIVE[=ms]
+        // Sin argumento, una muestra por segundo. Con "LIVE=n", cada n
+        // milisegundos, acotado por el propio liveData: un periodo imposible se
+        // recorta en vez de rechazarse, y la linea de apertura dice cual quedo.
+        unsigned long periodo=1000;
+        char* eqv=strchr(inputStr,'=');
+        if(eqv!=NULL){
+          periodo=strtoul(eqv+1,NULL,10);
+        }
+        liveData(periodo);
+        // Como los volcados: LIVE se cierra con su propia linea, que ademas dice
+        // si paro porque se lo pidieron o porque se acabo el tiempo.
+        hiddenCommand=true;
       }else if(!strncasecmp("TIME", inputStr, 4)){
         if(inputLength>4){
           if(manualClockAdjust(inputStr)){
