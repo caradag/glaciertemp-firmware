@@ -265,6 +265,11 @@ void displayDateVec(byte *dateVec, bool showTimezone){
 }
 
 void updateTimeZone(int oldTimeZone){
+  // Se relee el RTC ANTES de calcular. currentTime es la copia de la ultima lectura, y en
+  // la consola no se refresca con cada comando: tras cinco minutos descargando, cambiar el
+  // huso reescribia el reloj con la hora de hace cinco minutos, y el reloj perdia en
+  // silencio todo lo transcurrido. Pasaba incluso con el mismo huso (diferencia cero).
+  getCurrentTime();
   byte newDateVec[6];
   unix2date(currentTime+(timeZone-oldTimeZone)*3600,newDateVec); 
   setDateVector(newDateVec);

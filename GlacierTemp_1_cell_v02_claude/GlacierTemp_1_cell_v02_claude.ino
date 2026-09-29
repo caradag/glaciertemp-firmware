@@ -27,6 +27,10 @@
 // the main firmware does not set it here, or the other way round.
 // ===========================================================================
 
+// Que los comandos respondan tanto comandos terminados en /n como /r/n o /r o sin terminacion
+// Que la app permita enviar comandos aunque la placa no responda como es esperado
+
+
 // Alejar la traza del borde en la parte inferior
 // En el chip de memoria poner pins 7 y 3 con un pull-up the 10 kOhm a VCC (pin 3 flotante consumia 84 uA), y alimentar el chip directo de VCC (no hace falta alimentarlo con un pin IO)
 // Add decoupling capacitor to the flash. From MEM_POWER Add a 100 nF (plus ~1–4.7 µF) next to the chip
@@ -265,7 +269,7 @@ unsigned long readULong(char *str, int base=10);
 #define LOG_VOLTAGE   1   // battery cell voltage, mV, via the R13/R12 divider on A6
 #define LOG_HDC_TEMP  1   // HDC1080 temperature, centi°C
 #define LOG_HDC_RH    1   // HDC1080 relative humidity, deci %
-#define LOG_TMP119    0   // TMP119 high accuracy temperature, centi°C
+#define LOG_TMP119    1   // TMP119 high accuracy temperature, centi°C
 #define LOG_DS18B20   0   // NUMBER of DS18B20 sensors on the D3 1-Wire bus. See below.
 
 //---------------------- EXPANSION HEADER H1, A0..A3 -------------------------
@@ -303,7 +307,7 @@ unsigned long readULong(char *str, int base=10);
 // considerably longer ADC_REF_SETTLE_MS -- 10 ms or more for a 100 nF cap.
 #define ADC_REF_SETTLE_MS 5
 
-#define LOG_A0  0
+#define LOG_A0  1
 #define LOG_A1  0
 #define LOG_A2  0
 #define LOG_A3  0
@@ -314,7 +318,7 @@ unsigned long readULong(char *str, int base=10);
 // width of an analog column in the aligned LOG layout, and a longer name is not
 // truncated, it just pushes its own heading out of line with the data beneath
 // it. LOGC is unaffected, having no columns to align.
-#define A0_NAME "A0"
+#define A0_NAME "Depth"
 #define A1_NAME "A1"
 #define A2_NAME "A2"
 #define A3_NAME "A3"
@@ -1330,6 +1334,7 @@ void loop() {
         hiddenCommand=true;
       }else{        
         out << F("Unrecognized command:") << inputStr << NL;
+        out << F("Use NL terminated comms") << NL;
         validCommand=false;
       }
       if(validCommand){
