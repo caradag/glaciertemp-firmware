@@ -99,6 +99,16 @@ void reportClockNotSet(){
   out << (char)(ASTERISK_BAR+3) << NL;
 }
 
+void printSensorErrors(){
+  out << F("\tSensor errors:");
+  if(sensorErrCount==0){
+    out << F("No errors\n");
+  }else{
+    printHex16(sensorErrCodes);
+    out << F(",") << sensorErrCount << F("failed attempts (latest code last)\n");
+  }
+}
+
 void displayExtendedInfo(){  
   displayInfo();
 
@@ -135,6 +145,11 @@ void displayExtendedInfo(){
   out << F("\tAwake ms pre/meas/post, max: ") << NOSPACER
       << maxPreMs << "/" << maxMeasMs << "/" << maxPostMs
       << NORMALTEXT << NL;
+
+  // Fallos de sensores desde el ultimo RC o arranque en frio (ver logSensorError).
+  // Los codigos van en crudo, como en INFO, y la app los traduce: el texto de cada uno
+  // costaria flash. El digito de la derecha es el mas reciente.
+  printSensorErrors();
 
   out << F("CONFIGURATION\n");
   displayVars(0,sizeof(varLengths)-1);

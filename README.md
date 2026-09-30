@@ -51,6 +51,7 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.4, comando LIVE | 29.044 | 89 % | 913 B (44 %) |
 | firmware 3.5, huso sin atrasar el reloj; TMP119 y A0 en el log | 30.628 | 94 % | 934 B (45 %) |
 | firmware 3.6, registro de fallos de sensores y reintentos; sin coma flotante | 28.146 | 86 % | 924 B (45 %) |
+| firmware 3.7, fallos de sensores tambien en I; compilado SIN A0 | 27.208 | 84 % | 902 B (44 %) |
 
 ## AJUSTES DE PLACA OBLIGATORIOS
 

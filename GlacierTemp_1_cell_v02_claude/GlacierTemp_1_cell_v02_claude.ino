@@ -311,7 +311,7 @@ unsigned long readULong(char *str, int base=10);
 // considerably longer ADC_REF_SETTLE_MS -- 10 ms or more for a 100 nF cap.
 #define ADC_REF_SETTLE_MS 5
 
-#define LOG_A0  1
+#define LOG_A0  0
 #define LOG_A1  0
 #define LOG_A2  0
 #define LOG_A3  0
@@ -322,7 +322,7 @@ unsigned long readULong(char *str, int base=10);
 // width of an analog column in the aligned LOG layout, and a longer name is not
 // truncated, it just pushes its own heading out of line with the data beneath
 // it. LOGC is unaffected, having no columns to align.
-#define A0_NAME "Depth"
+#define A0_NAME "A0"
 #define A1_NAME "A1"
 #define A2_NAME "A2"
 #define A3_NAME "A3"
@@ -777,7 +777,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.6"
+#define FIRMWARE_VERSION "3.7"
 #define PROTOCOL_VERSION 5
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
