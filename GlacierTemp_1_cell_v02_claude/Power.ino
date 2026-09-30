@@ -183,15 +183,13 @@ int twoPointMv(int refV1,int refC1,int refV2,int refC2,int count){
   if(refC1==refC2){
     return count;
   }
-  float RV1=refV1, RV2=refV2, RC1=refC1, RC2=refC2;
-  float slope=(RV2-RV1)/(RC2-RC1);
-  float k;
-  if(RV1<RV2){
-    k=RV1-slope*RC1;
-  }else{
-    k=RV2-slope*RC2;
-  }
-  return (slope*count+k);
+  // En enteros: v = V1 + (V2-V1)*(count-C1)/(C2-C1), con todo sobre un solo divisor
+  // para que la division --que en C trunca hacia cero, como el (int) sobre el float
+  // que habia antes-- sea la unica fuente de redondeo. El float daba la misma recta
+  // con error propio: en un barrido de 13,8 millones de casos difirio en el 0,2 %,
+  // siempre en un milivoltio y siempre por error del float.
+  long d=(long)refC2-refC1;
+  return (int)(((long)refV1*d + (long)(refV2-refV1)*(count-refC1))/d);
 }
 
 int getBatteryVoltage(){
@@ -206,7 +204,10 @@ int getBatteryVoltage(){
 // eqPos is where the '=' sits in the command: 2 for "V1=", 3 for "A01=".
 void setRefVoltage(char *inputStr, int VOLT_MEM, int VAL_MEM, byte eqPos, int rawCount){
   if(inputStr[eqPos]=='=' && strlen(inputStr)>(unsigned)(eqPos+1)){
-    EEPROM.put(VOLT_MEM,(int)(readFloat(inputStr)*1000));
+    // En milivoltios con enteros. Con float, 86 de los valores de 1 a 10 V con tres
+    // decimales se guardaban con un milivoltio de menos --"V1=2.001" guardaba 2000--
+    // porque no son representables y el truncado caia por debajo.
+    EEPROM.put(VOLT_MEM,(int)readScaled(inputStr,3));
     EEPROM.put(VAL_MEM,rawCount);
   }
   out << getInt(VOLT_MEM) << "mV->" << getInt(VAL_MEM) << NL;
@@ -389,7 +390,9 @@ int battDaysLeft(){
     // Returning here also avoids a division by zero.
     return -1;
   }
-  return (getBatteryCapacity()*runningDays())/drop;
+  // Centesimas de dia, para no perder la fraccion que daba el float; cabe de sobra en
+  // un long (100 % x 10 anos = 3,65e7).
+  return ((long)getBatteryCapacity()*runningCentiDays())/(100L*drop);
 }
 
 // void turnOffBTifDisconnected(){

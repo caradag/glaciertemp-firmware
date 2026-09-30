@@ -230,7 +230,10 @@ void getDS18B20Temp(){
   if(ds18b20Found==0){
     return;
   }
+  // Un fallo del bus o de una sonda se anota (ERR_DS18B20) pero no se reintenta: una
+  // conversion son hasta 750 ms despierto, y el CRC ya protege lo que se guarda.
   if(!oneWire.reset()){
+    logSensorError(ERR_DS18B20);
     return;
   }
   oneWire.write(DS18B20_SKIP_ROM);
@@ -245,11 +248,15 @@ void getDS18B20Temp(){
     }
   }
   if(!ready){
+    logSensorError(ERR_DS18B20);
     return;      // nobody released the bus
   }
 
   for(byte i=0;i<ds18b20Found;i++){
     currentTempDS[i]=ds18b20ReadOne(i);
+    if(currentTempDS[i]==INVALID_TEMP){
+      logSensorError(ERR_DS18B20);
+    }
   }
 }
 

@@ -87,6 +87,12 @@ bool logFormatMismatch = false;
 // constantes, no variables globales; declararla aqui es seguro porque si el firmware la
 // renombra el banco deja de COMPILAR, que es el tipo de fallo que se ve enseguida.
 bool dumpAborted = false;
+
+// El registro de fallos de sensores que INFO informa en crudo. Valores con los cuatro
+// nibbles distintos y un contador de varias cifras, para que check_info.py compruebe el
+// ORDEN de los codigos y el formato, no solo que el campo exista.
+unsigned int sensorErrCodes = 0x3218;
+unsigned int sensorErrCount = 1234;
 #define MAX_RECORD_BYTES 12
 #define LOG_SIGNATURE 0x100F
 uint16_t getUInt(int){ return g_sig; }

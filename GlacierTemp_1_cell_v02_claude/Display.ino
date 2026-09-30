@@ -110,8 +110,9 @@ void displayExtendedInfo(){
   flashPowerDown();
 
   out << F("\tSesion start:"); displayUnixTime(sessionStartTime); ln();
-  out << '\t' << '\xB1' << runningDays() << F("days running\n");
-  out << F("\tExpected battery life:") << battDaysLeft() << F("days (drop") << battDrop() << F("% over") << '\xB1' << runningDays() << F("days)\n");
+  long deciDays=runningCentiDays()/10;
+  out << '\t' << '\xB1' << deciDays << F("days running\n");
+  out << F("\tExpected battery life:") << battDaysLeft() << F("days (drop") << battDrop() << F("% over") << '\xB1' << deciDays << F("days)\n");
   
   out << F("\tLast time check:");
   // getULong, not getUInt: the stored value is a 32-bit timestamp, so a 16-bit

@@ -285,14 +285,21 @@ void readFlashUniqueID(byte* id8){
 
 // Imprime el identificador como 16 digitos hexadecimales, sin separadores, para
 // que la app pueda tomarlo tal cual.
-void printBoardId(){
+// Los bytes [from..7] del numero de serie de la flash, en hexadecimal y seguidos. Una
+// sola funcion para el identificador completo (from=0) y para la cola del corto
+// (from=5): antes eran tres bucles iguales, uno mas dentro de INFO.
+void printIdHex(byte from){
   byte id[8];
   readFlashUniqueID(id);
   out << NOSPACER;
-  for(byte i=0;i<8;i++){
+  for(byte i=from;i<8;i++){
     out << hexDigit(id[i]>>4) << hexDigit(id[i]);
   }
   out << NORMALTEXT;
+}
+
+void printBoardId(){
+  printIdHex(0);
 }
 
 // Identificador corto de la placa, con la forma "GT001-XXXXXX".
@@ -315,15 +322,10 @@ void printBoardId(){
 // El identificador completo de 64 bits sigue estando en el comando ID, en la cabecera INFO
 // y en la linea de arranque, y es el que desempata si alguna vez hiciera falta.
 void printShortBoardId(){
-  byte id[8];
-  readFlashUniqueID(id);
   // Un solo literal y no tres elementos: el preprocesador los concatena en tiempo de
   // compilacion, asi que cuesta una cadena en flash en vez de tres llamadas al stream.
   out << NOSPACER << F(BOARD_TYPE BOARD_HW_VERSION "-");
-  for(byte i=5;i<8;i++){
-    out << hexDigit(id[i]>>4) << hexDigit(id[i]);
-  }
-  out << NORMALTEXT;
+  printIdHex(5);
 }
 
 // El comando ID: la MISMA linea que sale en el arranque, con el identificador corto y el

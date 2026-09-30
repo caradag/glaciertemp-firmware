@@ -74,9 +74,73 @@ unsigned long readULong(char *str,int fstart,int fend, bool* isNegative, int bas
   return result;
 }
 
+// El numero que sigue al '=' de un comando, multiplicado por 10^decimals y en
+// enteros: readScaled("V1=1.234",3) da 1234 y readScaled("INT=600",0) da 600. Los
+// decimales que sobran se truncan hacia cero, como hacia el (int) sobre el float de
+// antes, y los espacios se ignoran. Un numero de mas de nueve cifras se SATURA en vez
+// de dar la vuelta, para que la comprobacion de rango lo rechace: con float,
+// "INT=99999999999" era 1e11 y se rechazaba; con un long que diera la vuelta seria
+// un intervalo cualquiera aceptado en silencio.
+long readScaled(const char *str, byte decimals){
+  const char *p=strchr(str,'=');
+  p = p ? p+1 : str;
+  bool negative=false, saturated=false;
+  long value=0;
+  int8_t frac=-1;                 // decimales leidos; -1 mientras no haya punto
+  for(;;p++){
+    char c=*p;
+    if(c=='-'){
+      negative=true;
+    }else if(c=='+'){
+      // "TZN=+2": el signo explicito se acepta, como hacia el lector anterior
+    }else if(c=='.'){
+      frac=0;
+    }else if(c>='0' && c<='9'){
+      if(frac>=(int8_t)decimals){
+        continue;                 // decimal de mas: se trunca
+      }
+      if(value>=100000000L){
+        saturated=true;
+      }else{
+        value=value*10+(c-'0');
+      }
+      if(frac>=0){
+        frac++;
+      }
+    }else if(c!=' '){
+      break;
+    }
+  }
+  for(int8_t i=(frac<0 ? 0 : frac); i<(int8_t)decimals; i++){
+    if(value>=100000000L){
+      saturated=true;             // la escala tampoco puede dar la vuelta
+      break;
+    }
+    value*=10;
+  }
+  if(saturated){
+    return negative ? -2000000000L : 2000000000L;
+  }
+  return negative ? -value : value;
+}
+
 float readFloat(char *str,int fstart,int fend){
   int dotPos=findChar(str,fstart,fend,'.');
   return (float)readLong(str,fstart,fend)/intPow(fend-dotPos,10);
+}
+
+// Entero decimal sin signo a partir de p, saltando los espacios de delante; para en el
+// primer caracter que no sea cifra. Sustituye a strtoul(), que arrastraba 470 bytes de
+// biblioteca (bases, signos, desbordamiento, errno) solo para leer "LOGB=0,99".
+unsigned long readUL(const char *p){
+  unsigned long v=0;
+  while(*p==' '){
+    p++;
+  }
+  while(*p>='0' && *p<='9'){
+    v=v*10+(*p++ - '0');
+  }
+  return v;
 }
 
 long intPow(int power,int base){

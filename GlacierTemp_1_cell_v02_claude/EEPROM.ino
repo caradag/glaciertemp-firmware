@@ -80,8 +80,10 @@ void displayVars(int first, int last){
       out << getUInt(varAddr[i]) << NL;
     }else if (varTypes[i]=='U') {
       out << getULong(varAddr[i]) << NL;      
+#if GPS_INSTALLED == 1 || IRIDIUM_INSTALLED == 1
     }else if (varTypes[i]=='f') {
       out << '\xB6' << getFloat(varAddr[i]) << NL;
+#endif
     }else if (varTypes[i]=='b') {
       out << EEPROM.read(varAddr[i]) << NL;
     }
@@ -119,10 +121,11 @@ bool varLimits(byte varID, long &lo, long &hi){
   return false;
 }
 
-void updateVar(byte varID,float value){
+void updateVar(byte varID,long value){
   // Refuse out-of-range values instead of storing them. The comparison is done
-  // in float so an absurd input cannot overflow on the way to the integer cast,
-  // which is also how a value like MSW=1000 used to become 232 without warning.
+  // on the full long, before any narrowing cast, which is how a value like
+  // MSW=1000 used to become 232 without warning. An absurdly long input does not
+  // wrap around: readScaled() saturates it, so it is rejected here too.
   long lo,hi;
   if(varLimits(varID,lo,hi) && (value<lo || value>hi)){
     // NOSPACER goes before hi so the stream does not append its usual separator
@@ -136,8 +139,12 @@ void updateVar(byte varID,float value){
     EEPROM.put(varAddr[varID],(unsigned int) value);  
   }else if (varTypes[varID]=='U') {
     EEPROM.put(varAddr[varID],(unsigned long) value);
+#if GPS_INSTALLED == 1 || IRIDIUM_INSTALLED == 1
+  // Solo las variables de posicion eran 'f', y solo existen con GPS o Iridium. Sin
+  // ellos este camino arrastraba la biblioteca de coma flotante entera.
   }else if (varTypes[varID]=='f') {
     EEPROM.put(varAddr[varID],(float) value);
+#endif
   }else if (varTypes[varID]=='b') {
     EEPROM.put(varAddr[varID],(byte) value);
   }  
@@ -190,6 +197,9 @@ void resetCount(){
   maxPreMs=0;
   maxMeasMs=0;
   maxPostMs=0;
+  // Los fallos de sensores describen tambien el despliegue que termina.
+  sensorErrCodes=0;
+  sensorErrCount=0;
   out << F("Memory reset\n");
 }
 
@@ -309,6 +319,9 @@ bool takeMeasurement(){
 
   memSendControlByte(POWER_DOWN);
 
+  if(!stored){
+    logSensorError(ERR_FLASH_WRITE);
+  }
   if(stored){
     addCount();
     if(out.getVerbose()){
@@ -1038,16 +1051,11 @@ void printMemoryLifetime(){
 // Esta linea es el contrato de maquina y por eso la cubre PROTOCOL_VERSION.
 void printMetadata(){
   memSendControlByte(POWER_UP);
-  byte id[8];
-  readFlashUniqueID(id);
   // Espaciado explicito, por lo mismo que en dumpLogBinary: el separador
   // automatico del stream no coincide con lo que un parser espera leer.
   out << NOSPACER << F("INFO fw=") << F(FIRMWARE_VERSION);
   out << F(" proto=") << PROTOCOL_VERSION;
-  out << F(" id=");
-  for(byte i=0;i<8;i++){
-    out << hexDigit(id[i]>>4) << hexDigit(id[i]);
-  }
+  out << F(" id="); printBoardId(); out << NOSPACER;
   out << F(" sig=");
   printHex16(getUInt(LOG_SIGNATURE_ADDR));
   out << NOSPACER << F(" rec=") << (unsigned long)BYTES_PER_SAMPLE;
@@ -1060,6 +1068,10 @@ void printMetadata(){
   out << F(" sid="); printShortBoardId(); out << NOSPACER;
   out << F(" baud=") << (unsigned long)BAUDRATE;
   out << F(" fastbaud=") << (unsigned long)FAST_BAUDRATE;
+  // Los ultimos cuatro codigos de fallo de sensores y el numero de intentos fallidos
+  // (ver logSensorError). Numericos a proposito: la app los traduce.
+  out << F(" err="); printHex16(sensorErrCodes);
+  out << NOSPACER << F(" errn=") << sensorErrCount;
   out << NORMALTEXT;
   ln();
   flashPowerDown();

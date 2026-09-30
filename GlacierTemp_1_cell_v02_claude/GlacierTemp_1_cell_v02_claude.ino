@@ -76,11 +76,15 @@
                    temperature sensor is powered from it; both sit on 3.3V.
     Vbatt/6        raw cell voltage through the R13/R12 = 10M/2M divider
 
-  CODE SIZE NOTE: roughly 1.5 kB of flash is spent on floating point. The soft
-  float helpers alone are ~1.1 kB (__addsf3x, __mulsf3x, __divsf3x and friends),
-  pulled in by getBatteryVoltage(), getTempAndRH(), readFloat()/updateVar() and
-  lightOStream::operator<<(float). All four could be done in integer arithmetic.
-  A further ~2 kB is available simply by turning on Tools > Compiler LTO.
+  CODE SIZE NOTE: the default build uses NO floating point. The soft-float
+  library cost ~1.5 kB and was pulled in by getTempAndRH(), twoPointMv(),
+  runningDays(), readFloat()/updateVar() and setRefVoltage(); since 3.6 they are
+  all integer arithmetic, verified against the float versions (and more exact).
+  A single float anywhere brings the whole library back: check with
+  avr-nm on the .elf that no __addsf3/__mulsf3/__divsf3 symbol appears.
+  Only the GPS and Iridium code still uses float. strtoul() was replaced by
+  readUL() for the same reason (~470 bytes). LTO is already on by default in
+  MiniCore (Tools > Compiler LTO); turning it off costs ~2 kB.
 */
 
 #include "./lightOStream.h"
@@ -773,7 +777,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.5"
+#define FIRMWARE_VERSION "3.6"
 #define PROTOCOL_VERSION 5
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -861,6 +865,44 @@ unsigned int maxMeasMs    __attribute__((section(".noinit")));
 unsigned int lastPostMs   __attribute__((section(".noinit")));
 unsigned int maxPostMs    __attribute__((section(".noinit")));
 
+// Registro de fallos de los sensores, en .noinit por la misma razon que las
+// estadisticas de arriba: solo se lee tras un reinicio, que es lo que borraria la RAM
+// normal. Lo valida el mismo TIMING_MAGIC.
+//
+// sensorErrCodes guarda los CUATRO ultimos codigos de 4 bits, el mas reciente en el
+// nibble bajo; 0 es un hueco vacio. sensorErrCount cuenta TODOS los intentos fallidos,
+// tambien los que un reintento arreglo despues: esos no dejan hueco en el log y sin el
+// contador no quedarian en ninguna parte. Se saturan en vez de dar la vuelta.
+//
+// Se informan en crudo en la linea INFO ("err=0x3A10 errn=17") y la app traduce los
+// codigos: el texto de cada uno costaria flash que no hay.
+unsigned int sensorErrCodes __attribute__((section(".noinit")));
+unsigned int sensorErrCount __attribute__((section(".noinit")));
+
+// Los codigos. Mantener la tabla igual en la app (SensorErrors.kt).
+#define ERR_TMP_TRIGGER  1  // TMP119: no confirmo la orden de conversion
+#define ERR_TMP_POLL     2  // TMP119: no respondio al consultar si termino
+#define ERR_TMP_TIMEOUT  3  // TMP119: no termino la conversion a tiempo
+#define ERR_TMP_READ     4  // TMP119: fallo la lectura de la temperatura
+#define ERR_HDC_TRIGGER  5  // HDC1080: no confirmo la orden de medida
+#define ERR_HDC_READ     6  // HDC1080: lectura incompleta
+#define ERR_DS18B20      7  // DS18B20: sonda ausente, bus ocupado o CRC malo
+#define ERR_FLASH_WRITE  8  // la flash no acepto el registro
+
+// Intentos por lectura de un sensor I2C antes de darla por perdida.
+#define SENSOR_TRIES 3
+
+// Anota un fallo. Un codigo igual al ultimo no se repite en la lista --un sensor
+// muerto la llenaria entera del mismo codigo y borraria la historia--, pero SI cuenta.
+void logSensorError(byte code){
+  if((sensorErrCodes & 0x0F)!=code){
+    sensorErrCodes=(sensorErrCodes<<4)|code;
+  }
+  if(sensorErrCount!=0xFFFF){
+    sensorErrCount++;
+  }
+}
+
 // Phase durations are structurally bounded well under a minute, but clamping
 // keeps a wildly long cycle from silently wrapping the 16-bit counters.
 unsigned int clampMs(unsigned long ms){
@@ -890,6 +932,7 @@ void setup() {
     lastPreMs=0;  maxPreMs=0;
     lastMeasMs=0; maxMeasMs=0;
     lastPostMs=0; maxPostMs=0;
+    sensorErrCodes=0; sensorErrCount=0;
   }
 
   powerManagementSetup();
@@ -1081,7 +1124,7 @@ void loop() {
         int oldTimeZone=timeZone;// In case the time zone is changed we remember the old one
         bool doUpdate=inputStr[3]=='=';
         if(doUpdate){ // If there is an equal sign after the command, we update the variable with the new value
-          updateVar(varID,readFloat(inputStr));// We write the new value to EEPROM
+          updateVar(varID,readScaled(inputStr,0));// We write the new value to EEPROM
           readConfiguration();// We update workspace variables fron the values stored in the EEPROM
         }
         displayVars(varID, varID); // We display the current value of the variable
@@ -1109,7 +1152,7 @@ void loop() {
         unsigned long periodo=1000;
         char* eqv=strchr(inputStr,'=');
         if(eqv!=NULL){
-          periodo=strtoul(eqv+1,NULL,10);
+          periodo=readUL(eqv+1);
         }
         liveData(periodo);
         // Como los volcados: LIVE se cierra con su propia linea, que ademas dice
@@ -1133,7 +1176,7 @@ void loop() {
       }else if(!strncasecmp("MSG", inputStr, 3)){
         byte tries=1;
         if(inputLength>3){
-          tries=readInt(inputStr);
+          tries=readUL(inputStr+3);
           messageSent=false;
         }
         for(int i=0;i<tries;i++){
@@ -1219,13 +1262,13 @@ void loop() {
         unsigned long a=0, b=0xFFFFFFFFUL, fast=0;
         char* eq=strchr(inputStr,'=');
         if(eq!=NULL){
-          a=strtoul(eq+1,NULL,10);
+          a=readUL(eq+1);
           char* comma=strchr(eq,',');
           if(comma!=NULL){
-            b=strtoul(comma+1,NULL,10);
+            b=readUL(comma+1);
             char* comma2=strchr(comma+1,',');
             if(comma2!=NULL){
-              fast=strtoul(comma2+1,NULL,10);
+              fast=readUL(comma2+1);
             }
           }else{
             b=a;
@@ -1246,10 +1289,10 @@ void loop() {
         unsigned long hexBytes=0, fast=0;
         char* eqh=strchr(inputStr,'=');
         if(eqh!=NULL){
-          hexBytes=strtoul(eqh+1,NULL,10);
+          hexBytes=readUL(eqh+1);
           char* commah=strchr(eqh,',');
           if(commah!=NULL){
-            fast=strtoul(commah+1,NULL,10);
+            fast=readUL(commah+1);
           }
         }
         displayHistoryHex(hexBytes, fast);
@@ -1270,24 +1313,23 @@ void loop() {
         printBoardIdStandalone();
       }else if(!strcasecmp("H", inputStr)){// Prints help
         printHelp();
-      }else if(!strncasecmp("XON", inputStr, 3)){// Prints help  
-        if(inputLength!=3){
-          byte pin=readInt(inputStr);
-          digitalWrite(pin,HIGH);
-          out << "Pin" << pin << "HIGH\n";
-        }           
-      }else if(!strncasecmp("XOFF", inputStr, 4)){// Prints help  
-        if(inputLength!=4){
-          byte pin=readInt(inputStr);
-          digitalWrite(pin,LOW);
-          out << "Pin" << pin << "LOW\n";
+      }else if(!strncasecmp("XO", inputStr, 2)){// XONn / XOFFn: pone el pin n en alto o en bajo
+        // Una rama para los dos: solo cambian el nivel y el sitio donde empieza el numero.
+        bool on=(inputStr[2]|0x20)=='n';
+        byte pos=on ? 3 : 4;
+        if(inputLength>pos){
+          byte pin=readUL(inputStr+pos);
+          digitalWrite(pin,on);
+          out << "Pin" << pin << (on ? "HIGH\n" : "LOW\n");
         }
       }else if(!strcasecmp("V", inputStr)){//
         out << getBatteryVoltage() << "mV (" << getRawBatteryVoltage() << ")\n"; 
-      }else if(!strncasecmp("V1", inputStr, 2)){// V1=1.234 stores 1.234 V against the count read now
-        setRefVoltage(inputStr, REFERENCE_VOLTAGE_1, REFERENCE_VOLTAGE_COUNT_1, 2, getRawBatteryVoltage());
-      }else if(!strncasecmp("V2", inputStr, 2)){// V2=1.234, the second calibration point
-        setRefVoltage(inputStr, REFERENCE_VOLTAGE_2, REFERENCE_VOLTAGE_COUNT_2, 2, getRawBatteryVoltage());
+      }else if((inputStr[0]|0x20)=='v' && (inputStr[1]=='1' || inputStr[1]=='2')){
+        // V1=1.234 / V2=1.234: los dos puntos de calibracion, contra la cuenta leida ahora
+        bool second=inputStr[1]=='2';
+        setRefVoltage(inputStr, second ? REFERENCE_VOLTAGE_2 : REFERENCE_VOLTAGE_1,
+                      second ? REFERENCE_VOLTAGE_COUNT_2 : REFERENCE_VOLTAGE_COUNT_1,
+                      2, getRawBatteryVoltage());
 #if ANALOG_CHANNELS
       // Expansion header H1. "A0" alone reports the pin, "A01=1.234" and
       // "A02=1.234" store its two calibration points, and the same for A1..A3.
@@ -1373,7 +1415,7 @@ void loop() {
     // If the number of days running since last reset is a multiple of MESSAGE_FREQUENCY_DAYS we set the flag messageSent to false
     // so the message is sent, amd if it fails it will be retried on after each of the folowing picture cycles
     byte messageFreq=EEPROM.read(varAddr[MESSAGE_FREQUENCY_DAYS]);
-    if(messageFreq>0 && ((unsigned long)runningDays())%messageFreq==0){
+    if(messageFreq>0 && ((unsigned long)(runningCentiDays()/100))%messageFreq==0){
       messageSent=false;
       iridiumSendMessageCall();
     }

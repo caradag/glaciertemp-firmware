@@ -74,6 +74,18 @@ def main():
             fails.append("INFO no lleva campo proto=")
         elif int(proto.group(1)) < 3:
             fails.append(f"INFO anuncia proto={proto.group(1)}, se esperaba 3 o mas")
+        # El registro de fallos de sensores: cuatro digitos hexadecimales con el codigo mas
+        # reciente al final, y el contador en decimal. El banco fija 0x3218 y 1234.
+        err = re.search(r" err=(0x[0-9A-F]{4})(?= )", info)
+        errn = re.search(r" errn=(\d+)$", info)
+        if not err or err.group(1) != "0x3218":
+            fails.append(f"INFO err= mal formado o distinto de 0x3218: {info!r}")
+        if not errn or errn.group(1) != "1234":
+            fails.append(f"INFO errn= mal formado o distinto de 1234: {info!r}")
+        # Los campos de siempre siguen pegados a su valor, sin espacios colados.
+        for campo in ("id=", "sig=0x", "rec=", "count=", "sid=", "baud=", "fastbaud="):
+            if (" " + campo) not in info or (" " + campo + " ") in info:
+                fails.append(f"INFO: el campo {campo} falta o lleva un espacio de mas: {info!r}")
 
     # --- el comando ID da la misma linea que el arranque --------------------
     #

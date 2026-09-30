@@ -219,12 +219,12 @@ void setDateVector(byte *dateVec) {
 bool manualClockAdjust(char *inputStr){
   byte newDateVec[6]={0};
   for(int i=2;i<7;i++){
-    newDateVec[i-2]=readLong(inputStr,i*3+1,i*3+2);
+    newDateVec[i-2]=readUL(inputStr+i*3+1);
   }
   // Se mira la longitud antes del caracter: sin esto, una cadena corta hace leer memoria
   // sin inicializar del buffer, que un dia de cada 256 contiene ':'.
   if(strlen(inputStr)>=24 && inputStr[21]==':'){
-    newDateVec[5]=readLong(inputStr,22,23);
+    newDateVec[5]=readUL(inputStr+22);
   }
   if(inputStr[4]=='=' && inputStr[9]=='-' && inputStr[12]=='-' && inputStr[15]==' ' && inputStr[18]==':' && newDateVec[0]>24 && newDateVec[1]>0 && newDateVec[1]<13 && newDateVec[2]>0 && newDateVec[2]<32 && newDateVec[3]<25 && newDateVec[4]<60 && newDateVec[5]<60){
     setDateVector(newDateVec);
@@ -404,8 +404,11 @@ void unix2date(uint32_t utime,byte *dateVec){
 }
 
 
-float runningDays(){
-  return ((float)(currentTime-sessionStartTime))/86400;
+// Dias de funcionamiento en CENTESIMAS de dia, en enteros. Para imprimirlos con un
+// decimal basta dividir por 10 y usar el prefijo '\xB1' del stream, que interpreta el
+// entero como escalado, igual que hacia el operator<<(float).
+long runningCentiDays(){
+  return (currentTime-sessionStartTime)/864;
 }
 
 void printRTCTime(){
