@@ -52,6 +52,13 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.5, huso sin atrasar el reloj; TMP119 y A0 en el log | 30.628 | 94 % | 934 B (45 %) |
 | firmware 3.6, registro de fallos de sensores y reintentos; sin coma flotante | 28.146 | 86 % | 924 B (45 %) |
 | firmware 3.7, fallos de sensores tambien en I; compilado SIN A0 | 27.208 | 84 % | 902 B (44 %) |
+| firmware 3.8 por defecto (sin canales analogicos) -- medido con `-DWIRE_TIMEOUT`, igual que el 3.7 en las mismas condiciones | 30.030 | 92 % | 907 B (44 %) |
+| firmware 3.8, A0 registrado, alimentacion fija | 31.074 | 95 % | 927 B (45 %) |
+| firmware 3.8, A0 alimentado desde A1 (o A1+A2+A3) | 31.524 / 31.546 | 97 % | 935 B (45 %) |
+
+Las filas del 3.8 se midieron con `arduino-cli` y `-DWIRE_TIMEOUT` (el codigo de timeout del
+I2C), que es como compila la placa en terreno; el 3.7 da exactamente los mismos 30.030 bytes
+en esas condiciones, de modo que la configuracion por defecto del 3.8 no cambia el binario.
 
 ## AJUSTES DE PLACA OBLIGATORIOS
 
@@ -59,6 +66,35 @@ El Arduino IDE 2.x guarda la seleccion de placa **por sketch**, no por proyecto.
 con el reloj equivocado no da error: el UART queda a 102400 baudios reales mientras
 `Serial.begin(230400)` afirma otra cosa, y la salida sale ilegible. Cada sketch lleva en su
 cabecera el bloque `REQUIRED BOARD SETTINGS`; respetarlo.
+
+## Sensores alimentados desde un pin (PIN_POWER)
+
+Un sensor leido en un pin del header (A0..A3) se puede alimentar desde otro pin del header,
+que el firmware enciende solo mientras lo lee. Un sensor de presion conectado a 3,3 V fijos
+subia el consumo en reposo a ~6 mA medidos en la pila; alimentado asi, gasta solo durante la
+lectura. Se configura en el bloque `SWITCHED POWER FOR THE SENSORS ON A0..A3` del sketch:
+
+```c
+#define LOG_A0        1
+#define A0_NAME       "Depth"
+#define A0_POWER      (PIN_POWER_A1|PIN_POWER_A2|PIN_POWER_A3)  // tres pines en paralelo
+#define A0_SETTLE_MS  100   // ms desde el encendido hasta la lectura
+```
+
+- Varios pines en paralelo reparten la corriente y reducen la caida de tension que ve el
+  sensor; se encienden con una sola escritura de `PORTC`, en el mismo ciclo de reloj.
+- La espera se cuenta **desde el encendido**: el sensor se enciende al empezar el ciclo de
+  medicion y antes de leerlo solo se espera lo que falte, asi que el tiempo que ya tardaron
+  los sensores I2C y la bateria no se paga dos veces.
+- `LIVE` mantiene el sensor encendido toda la sesion; `I`, `A0` y la calibracion `A01`/`A02`
+  lo encienden, esperan y apagan. Antes de dormir se apaga siempre.
+- Configuraciones imposibles (un canal que se alimenta a si mismo, un pin que alimenta y a la
+  vez se registra, una alimentacion para un canal apagado, esperas de mas de 5 s) no compilan.
+- `test/check_power.py` comprueba sobre el fuente que todos los caminos que leen el header
+  encienden y apagan; `--self-test` rompe el fuente a proposito y exige que lo detecte.
+- Sensor ratiometrico: la caida de tension en los pines aparece como error de ganancia
+  (caida/3300 mV). Calibrar con `A01`/`A02` con el sensor alimentado asi la absorbe a la
+  temperatura de la calibracion.
 
 ## Registro de datos
 

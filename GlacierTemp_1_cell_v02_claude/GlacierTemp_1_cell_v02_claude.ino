@@ -327,6 +327,123 @@ unsigned long readULong(char *str, int base=10);
 #define A2_NAME "A2"
 #define A3_NAME "A3"
 
+//------------- SWITCHED POWER FOR THE SENSORS ON A0..A3 (PIN_POWER) -----------
+// A sensor read on one header pin can be POWERED from another header pin, so it
+// draws nothing while the logger sleeps. A pressure sensor left on the 3.3V rail
+// costs milliamps permanently -- a thousand times the whole logger's sleep
+// budget -- when it only needs to be on for the fraction of a second it takes
+// to be read.
+//
+// Ax_POWER says which header pins feed the sensor read on Ax:
+//   PIN_POWER_NONE                       powered from the fixed rail (as before)
+//   PIN_POWER_A1                         A1 powers it
+//   PIN_POWER_A1|PIN_POWER_A2|PIN_POWER_A3   three pins IN PARALLEL: the current
+//                                         is shared, so the voltage the sensor
+//                                         sees drops about three times less
+// A power pin is made an OUTPUT, held LOW while the logger sleeps and driven
+// HIGH only around the reading. Several power pins are switched with ONE write
+// to PORTC, so they rise in the same clock cycle and no pin carries the load
+// alone, not even for microseconds.
+//
+// Ax_SETTLE_MS is how long the sensor needs after power-on before its output
+// can be trusted (its "power-on time"; confirm it on the bench by sweeping it).
+// The wait is counted FROM POWER-ON, not from the reading: the sensors are
+// switched on at the start of the measurement cycle, and right before the
+// analog pins are read only what is still missing is waited for. Whatever the
+// I2C sensors and the battery reading took is already part of the settle time.
+//
+// These are preprocessor masks and not the Arduino names A0..A3 on purpose: in
+// MiniCore A1 is a C++ constant, not a macro, so "#if A0_POWER == A1" would
+// compare against 0 without a word and validate nothing.
+//
+// Ratiometric sensors: the sensor is supplied with VCC minus the drop across the
+// pin(s), while the ADC measures against VCC, so that drop shows up as a gain
+// error of drop/3300. Calibrating with A01/A02 while powered this way absorbs it
+// at the calibration temperature; more pins in parallel shrink what is left.
+#define PIN_POWER_NONE 0x00
+#define PIN_POWER_A0   0x01   // the values are the PORTC bits of PC0..PC3
+#define PIN_POWER_A1   0x02
+#define PIN_POWER_A2   0x04
+#define PIN_POWER_A3   0x08
+
+#define A0_POWER  PIN_POWER_NONE
+#define A1_POWER  PIN_POWER_NONE
+#define A2_POWER  PIN_POWER_NONE
+#define A3_POWER  PIN_POWER_NONE
+
+#define A0_SETTLE_MS  0
+#define A1_SETTLE_MS  0
+#define A2_SETTLE_MS  0
+#define A3_SETTLE_MS  0
+
+// Derived: every pin that powers something, every logged pin, and the longest
+// settle among the channels that are switched.
+#define PIN_POWER_MASK ((LOG_A0 ? (A0_POWER) : 0) | (LOG_A1 ? (A1_POWER) : 0) | \
+                        (LOG_A2 ? (A2_POWER) : 0) | (LOG_A3 ? (A3_POWER) : 0))
+#define ANALOG_LOGGED_MASK ((LOG_A0 ? PIN_POWER_A0 : 0) | (LOG_A1 ? PIN_POWER_A1 : 0) | \
+                            (LOG_A2 ? PIN_POWER_A2 : 0) | (LOG_A3 ? PIN_POWER_A3 : 0))
+#define PIN_POWER_MAX_(a,b) ((a) > (b) ? (a) : (b))
+#define PIN_POWER_S0_ ((LOG_A0 && (A0_POWER)) ? (A0_SETTLE_MS) : 0)
+#define PIN_POWER_S1_ ((LOG_A1 && (A1_POWER)) ? (A1_SETTLE_MS) : 0)
+#define PIN_POWER_S2_ ((LOG_A2 && (A2_POWER)) ? (A2_SETTLE_MS) : 0)
+#define PIN_POWER_S3_ ((LOG_A3 && (A3_POWER)) ? (A3_SETTLE_MS) : 0)
+#define PIN_POWER_SETTLE_MS PIN_POWER_MAX_(PIN_POWER_MAX_(PIN_POWER_S0_, PIN_POWER_S1_), \
+                                           PIN_POWER_MAX_(PIN_POWER_S2_, PIN_POWER_S3_))
+
+// The power pins as text, built by the preprocessor so that reporting them costs
+// one flash string instead of a formatting routine: about 370 bytes less, on a
+// part that has 2 kB left. It names the union of all power pins, which is
+// exact for the usual case of one switched sensor.
+#if PIN_POWER_MASK & PIN_POWER_A0
+  #define PIN_POWER_T0_ " A0"
+#else
+  #define PIN_POWER_T0_ ""
+#endif
+#if PIN_POWER_MASK & PIN_POWER_A1
+  #define PIN_POWER_T1_ " A1"
+#else
+  #define PIN_POWER_T1_ ""
+#endif
+#if PIN_POWER_MASK & PIN_POWER_A2
+  #define PIN_POWER_T2_ " A2"
+#else
+  #define PIN_POWER_T2_ ""
+#endif
+#if PIN_POWER_MASK & PIN_POWER_A3
+  #define PIN_POWER_T3_ " A3"
+#else
+  #define PIN_POWER_T3_ ""
+#endif
+#define PIN_POWER_TEXT "(pwr" PIN_POWER_T0_ PIN_POWER_T1_ PIN_POWER_T2_ PIN_POWER_T3_ ","
+
+// Configurations that cannot work are stopped here rather than in the field.
+#if ((A0_POWER) & PIN_POWER_A0) || ((A1_POWER) & PIN_POWER_A1) || \
+    ((A2_POWER) & PIN_POWER_A2) || ((A3_POWER) & PIN_POWER_A3)
+  #error "Ax_POWER: a channel cannot power itself"
+#endif
+#if PIN_POWER_MASK & ANALOG_LOGGED_MASK
+  #error "PIN_POWER: a header pin cannot both power a sensor and be a logged channel (LOG_Ax 1)"
+#endif
+#if (!LOG_A0 && (A0_POWER)) || (!LOG_A1 && (A1_POWER)) || \
+    (!LOG_A2 && (A2_POWER)) || (!LOG_A3 && (A3_POWER))
+  #error "Ax_POWER set for a channel that is not logged (LOG_Ax 0)"
+#endif
+#if ((A0_POWER) | (A1_POWER) | (A2_POWER) | (A3_POWER)) & ~0x0F
+  #error "Ax_POWER: use only PIN_POWER_NONE and PIN_POWER_A0..PIN_POWER_A3"
+#endif
+#if A0_SETTLE_MS > 5000 || A1_SETTLE_MS > 5000 || A2_SETTLE_MS > 5000 || A3_SETTLE_MS > 5000 || \
+    A0_SETTLE_MS < 0 || A1_SETTLE_MS < 0 || A2_SETTLE_MS < 0 || A3_SETTLE_MS < 0
+  #error "Ax_SETTLE_MS out of range (0-5000 ms)"
+#endif
+#if PIN_POWER_MASK && PIN_POWER_SETTLE_MS == 0
+  #warning "PIN_POWER: a switched sensor with Ax_SETTLE_MS 0 is read the instant it is powered"
+#endif
+// The masks ARE the PORTC bits only while A0..A3 are PC0..PC3. True on every
+// ATmega328P variant of MiniCore; checked rather than trusted.
+#if PIN_POWER_MASK && defined(PIN_A0) && PIN_A0 != 14
+  #error "PIN_POWER assumes A0..A3 are PC0..PC3 (PIN_A0 == 14)"
+#endif
+
 //----------------------------- DS18B20 on D3 --------------------------------
 // LOG_DS18B20 is a COUNT, not a flag: 0 for none, 1 for a single sensor, N for
 // N sensors sharing the D3 1-Wire bus. Each one adds its own column to the log
@@ -694,6 +811,14 @@ bool ds18b20Extra=false;         // set if the bus holds more sensors than there
 // Calibrated H1 readings in mV, indexed by pin number 0..3. Entries for pins
 // that are switched off are never written or read.
 int currentAnalog[4]={INVALID_ANALOG,INVALID_ANALOG,INVALID_ANALOG,INVALID_ANALOG};
+#if PIN_POWER_MASK
+// Switched sensor power (see PIN_POWER). Declared here and not in Power.ino
+// because setup(), loop() and the LIVE loop in EEPROM.ino all reach them, and
+// the IDE appends the other tabs after this file.
+unsigned long analogPowerOnAt=0; // millis() when the sensors were switched on
+bool analogPowerIsOn=false;
+byte analogPowerHold=0;          // >0 while a LIVE session keeps them on
+#endif
 #endif
 // Set by checkLogFormat() when the log in flash was written by a build with a
 // different set of channels. Blocks further logging while SUSPEND_ON_FORMAT_MISMATCH.
@@ -777,7 +902,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.7"
+#define FIRMWARE_VERSION "3.8"
 #define PROTOCOL_VERSION 5
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1021,6 +1146,12 @@ void setup() {
   }
   out << ds18b20Found << '/' << LOG_DS18B20 << F("sensors\n");
   ds18b20ListSensors();
+#endif
+
+#if PIN_POWER_MASK
+  // Which header pins are power outputs: anyone looking at the board must be
+  // able to tell that those pins are not free.
+  printPinPowerConfig();
 #endif
 
   // Does the log already in flash come from a build with these same channels?

@@ -135,11 +135,106 @@ void powerManagementSetup() {
     #if LOG_A3
       pinMode(A3, INPUT);
     #endif
+    // Digital input buffer off on the logged pins: an analog level sitting
+    // mid-rail is exactly where a CMOS input buffer draws through-current. The
+    // ADC does not need the buffer. ADC0D..ADC3D are bits 0..3 of DIDR0, the
+    // same bits as the masks.
+    DIDR0 |= ANALOG_LOGGED_MASK;
+  #endif
+  #if PIN_POWER_MASK
+    // Power pins: outputs, LOW. The sensor they feed is off until a reading.
+    PORTC &= ~PIN_POWER_MASK;
+    DDRC  |= PIN_POWER_MASK;
   #endif
 }
 
+#if PIN_POWER_MASK
+//==================== SWITCHED SENSOR POWER (PIN_POWER) =====================
+// See the long note beside PIN_POWER in the main file.
+
+// Switches the sensors on, if they are not already, and notes when. Calling it
+// again while they are on does NOT restart the count: the sensor has been
+// settling since the first switch-on, and that is what matters to it.
+void analogPowerOn(){
+  if(!analogPowerIsOn){
+    PORTC |= PIN_POWER_MASK;     // every power pin in the same clock cycle
+    analogPowerOnAt=millis();
+    analogPowerIsOn=true;
+  }
+}
+
+// Waits only for whatever is still missing of PIN_POWER_SETTLE_MS since the
+// switch-on. Nothing if the I2C sensors and the battery reading already took
+// that long. The unsigned subtraction is right across the 49-day millis()
+// wrap; and millis() stopping during sleep does not matter, because power-on
+// and reading always happen in the same awake window.
+void analogPowerSettle(){
+  analogPowerOn();
+  unsigned long pasado=millis()-analogPowerOnAt;
+  if(pasado < (unsigned long)PIN_POWER_SETTLE_MS){
+    delay((unsigned long)PIN_POWER_SETTLE_MS-pasado);
+  }
+}
+
+// Switches them off, unless a LIVE session is holding them on.
+void analogPowerOff(){
+  if(analogPowerHold==0){
+    PORTC &= ~PIN_POWER_MASK;
+    analogPowerIsOn=false;
+  }
+}
+
+// LIVE keeps the sensors on for its whole session: toggling them for every
+// sample would add the settle time to each one, and a sensor that is switched
+// on and off at 5 Hz is not the sensor being watched.
+void analogPowerHoldOn(){
+  analogPowerHold++;
+  analogPowerOn();
+}
+void analogPowerRelease(){
+  if(analogPowerHold>0){
+    analogPowerHold--;
+  }
+  analogPowerOff();
+}
+
+// Header mask of the pins powering one channel
+byte analogPinPower(byte pin){
+  switch(pin){
+    case 0:  return LOG_A0 ? (A0_POWER) : 0;
+    case 1:  return LOG_A1 ? (A1_POWER) : 0;
+    case 2:  return LOG_A2 ? (A2_POWER) : 0;
+    default: return LOG_A3 ? (A3_POWER) : 0;
+  }
+}
+
+// "(pwr A1 A2, 100 ms)" after a channel that is switched; nothing otherwise.
+void printPinPowerOf(byte pin){
+  if(analogPinPower(pin)){
+    out << F(PIN_POWER_TEXT) << (unsigned int)PIN_POWER_SETTLE_MS << F("ms)");
+  }
+}
+
+// Start-up line: which channels are switched, and from which pins.
+void printPinPowerConfig(){
+  for(byte pin=0;pin<4;pin++){
+    if(analogPinPower(pin)){
+      out << F("Power for") << analogPinName(pin) << ':';
+      printPinPowerOf(pin);
+      out << NL;
+    }
+  }
+}
+#endif
+
+
 
 void goToSleep(){
+#if PIN_POWER_MASK
+  // Whatever happened while awake, a switched sensor never sleeps powered.
+  analogPowerHold=0;
+  analogPowerOff();
+#endif
   // Allow wake up pin to trigger interrupt on low.
   attachInterrupt(digitalPinToInterrupt(WAKEUP_PIN), arduinoWakeUpCallback, LOW);
   delay(SLEEP_DELAY);//Without this delay it misses the first sleep and creates noise in the serial output
@@ -239,9 +334,21 @@ void analogPinsEnd(){
 // Raw count on one header pin, switching the reference around the reading.
 // Used by the calibration commands, which read a single pin at a time.
 int getRawAnalogPin(byte pin){
+#if PIN_POWER_MASK
+  // A switched sensor has to be on and settled for a single reading too, and
+  // especially for A01/A02: the calibration has to see the sensor in the same
+  // state as the measurement, or its two points describe something else.
+  analogPowerOn();
+#endif
   analogPinsBegin();
+#if PIN_POWER_MASK
+  analogPowerSettle();   // the reference switch above already counts as settle time
+#endif
   int count=getRawAnalog(analogPinNumber(pin));
   analogPinsEnd();
+#if PIN_POWER_MASK
+  analogPowerOff();
+#endif
   return count;
 }
 
@@ -292,7 +399,15 @@ void setAnalogRefVoltage(char *inputStr, byte pin, byte point){
 
 // Reads every enabled header pin in one reference switch
 void readAnalogChannels(){
+#if PIN_POWER_MASK
+  // Normally already on: takeMeasurement() and LIVE switch the sensors on at
+  // the start, so the wait below only covers what is still missing.
+  analogPowerOn();
+#endif
   analogPinsBegin();
+#if PIN_POWER_MASK
+  analogPowerSettle();
+#endif
   #if LOG_A0
     currentAnalog[0]=getAnalogMv(0);
   #endif
@@ -306,6 +421,9 @@ void readAnalogChannels(){
     currentAnalog[3]=getAnalogMv(3);
   #endif
   analogPinsEnd();
+#if PIN_POWER_MASK
+  analogPowerOff();
+#endif
 }
 #endif // ANALOG_CHANNELS
 

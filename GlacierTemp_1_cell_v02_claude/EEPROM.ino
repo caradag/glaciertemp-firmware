@@ -238,6 +238,12 @@ bool takeMeasurement(){
     out << F("WARNING: log format changed, records are mixed\n");
 #endif
   }
+#if PIN_POWER_MASK
+  // Switched sensors go on FIRST, so their settle time runs while the I2C
+  // sensors and the battery are read; readAnalogChannels() then waits only for
+  // whatever is still missing, and switches them off again.
+  analogPowerOn();
+#endif
   memSendControlByte(POWER_UP);
   unsigned long measurementCount=getCount();
   uint32_t address;
@@ -539,6 +545,10 @@ void liveData(unsigned long periodMs){
   // pidio uno fuera de rango, este es el que hay.
   out << NOSPACER << F("LIVE begin every") << ' ' << periodMs << F("ms") << NL;
   printLogHeader(true);
+#if PIN_POWER_MASK
+  // Switched sensors stay on for the whole session (see analogPowerHoldOn).
+  analogPowerHoldOn();
+#endif
   unsigned long inicio=millis();
   bool parado=false;
   while(millis()-inicio < LIVE_MAX_MS){
@@ -584,6 +594,9 @@ void liveData(unsigned long periodMs){
   // Dos cierres distintos a proposito: el anfitrion necesita saber si paro
   // porque se lo pidieron o porque se acabo el tiempo, que es lo que le dice si
   // tiene que volver a pedirlo.
+#if PIN_POWER_MASK
+  analogPowerRelease();
+#endif
   out << (parado ? F("LIVE end\n") : F("LIVE timeout\n"));
 }
 

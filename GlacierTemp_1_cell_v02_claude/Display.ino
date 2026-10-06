@@ -70,7 +70,11 @@ void displayInfo(){
     if(currentAnalog[pin]==INVALID_ANALOG){
       out << F("NaN\n");
     }else{
-      out << '\xB3' << currentAnalog[pin] << "V\n";
+      out << '\xB3' << currentAnalog[pin] << "V";
+#if PIN_POWER_MASK
+      printPinPowerOf(pin);
+#endif
+      out << NL;
     }
   }
 #endif
