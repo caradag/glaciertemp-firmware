@@ -9,6 +9,27 @@ consumo para despliegues largos en glaciares.
 |---|---|
 | `GlacierTemp_1_cell_v02_claude` | Firmware principal: medicion, registro en flash, consola serie, GPS e Iridium |
 | `GlacierTemp_1_cell_initializer` | Utilidad de puesta en marcha: escribe la configuracion inicial en la EEPROM |
+| `GlacierTemp_diagnostics` | Firmware de banco: prueba la placa y los sensores de forma detallada y no toca el log |
+
+## Firmware de diagnostico
+
+`GlacierTemp_diagnostics` se flashea para revisar una placa y se reemplaza despues por el
+logger. Consola a 115200; `HELP` lista los comandos y `ALL` corre todas las pruebas no
+destructivas con un resumen PASS/WARN/FAIL. No cambia la EEPROM, ni el log, ni la hora del
+RTC; lo que toca para probar (registros de alarma y de onda cuadrada del RTC) lo restaura,
+y deja el TMP119 y la flash dormidos como el logger.
+
+Todo junto ocupa ~48 kB y el ATmega328P tiene 32, asi que las pruebas van en dos grupos,
+elegidos con `DIAG_MODE` al principio del sketch (las dos variantes al 95 %):
+
+| `DIAG_MODE` | Pruebas |
+|---|---|
+| `DIAG_SENSORS` (por defecto) | HDC1080 (IDs, configuracion, ruido, calefactor); TMP119 (ID, offset, lecturas) y **ruido frente a `TMP119_AVERAGING`** (0/8/32/64, intercaladas para que la deriva afecte a todas por igual); A0..A3 (cuentas, mV, ruido, abierto o conectado); **barrido del tiempo de estabilizacion** de un sensor alimentado desde otros pines (`SETTLE 0 123`) y su respuesta al escalon (`STEP`); tiempos de cada lectura |
+| `DIAG_BOARD` | EEPROM del logger (configuracion, calibraciones, contadores, firma del log); RTC (hora, OSF, flags, envejecimiento, temperatura), cristal del MCU contra el RTC, alarma -> linea de despertar; flash (ID, estado, power-down, coherencia log/contador) y prueba de escritura en el ultimo sector solo si esta vacio; bus 1-Wire; consumo dormido (`SLEEP 30`, despertado por el RTC) |
+| ambos | firma y fusibles del MCU, causa del reinicio, riel de 3,3 V y bateria, escaneo I2C, estado de todos los pines, LEDs, modulo Bluetooth |
+
+`test/check_diag.py` compara las constantes que el diagnostico copia del logger (pines,
+direcciones, mapa de EEPROM) y prueba en el PC sus funciones puras extraidas del fuente.
 
 ## Hardware
 
