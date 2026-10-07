@@ -180,6 +180,17 @@ void addCount(){
   }
 }
 
+// Is the log in flash a CONT log of this build? Then it IS readable here, at its
+// own record size, even though it does not match LOG_SIGNATURE.
+bool contLogStored(){
+  return getUInt(LOG_SIGNATURE_ADDR)==(unsigned int)LOG_SIGNATURE_CONT;
+}
+
+// Record size of the log in flash, as the dumps must step through it.
+byte logStride(){
+  return contLogStored() ? BYTES_PER_SAMPLE_CONT : BYTES_PER_SAMPLE;
+}
+
 void resetCount(){
   //Reseting counters  
   EEPROM.put(COUNT_RESET_ADDR,getFullCount());
@@ -206,20 +217,66 @@ void resetCount(){
 //################## HISTORY MANAGEMENT FUNCTIONS ##########################
 
 
-#if LOG_DS18B20
-// Writes the whole DS18B20 block. A helper rather than another line in the &&
-// chain because the number of sensors is a compile-time count, not a flag, and
-// the chain cannot loop. Returns false on the first field that fails, which
-// keeps the same all-or-nothing behaviour as the rest of the record.
-bool storeDS18B20(uint32_t address){
-  for(byte i=0;i<LOG_DS18B20;i++){
-    if(!flashWriteInt(address+OFF_DS18B20+2*i, currentTempDS[i])){
-      return false;
-    }
-  }
-  return true;
-}
+// Reads every logged sensor into the current* variables and returns the battery
+// in mV. ONE sequence for takeMeasurement(), LIVE and CONT, in one order: both
+// I2C sensors run from the permanent 3.3V rail, so nothing to settle before
+// them, and the battery is read while the INTERNAL reference is still in force,
+// before the header channels switch it to VCC and back. noinline: three copies
+// of the inlined sensor code would not fit in the flash.
+__attribute__((noinline)) int readSensors(){
+#if LOG_HDC_TEMP || LOG_HDC_RH
+  getTempAndRH();
 #endif
+#if LOG_TMP119
+  getHighAccuracyTemp();
+#endif
+#if LOG_DS18B20
+  getDS18B20Temp();
+#endif
+  int battMv=getBatteryVoltage();
+#if ANALOG_CHANNELS
+  readAnalogChannels();
+#endif
+  return battMv;
+}
+
+// Builds one record in RAM, each field at its OFF_* offset: a channel switched
+// off simply is not there and everything after it moves up. The record then
+// goes to the flash in ONE write, instead of one write-enable, page program and
+// busy wait per field: shorter awake time for the logger, and the speed CONT
+// needs. Temperatures are stored in 0.01°C increments so they fit in two bytes.
+void packRecord(byte* b, unsigned long t, int battMv){
+  memcpy(b+OFF_TIME, &t, 4);
+#if LOG_VOLTAGE
+  memcpy(b+OFF_VOLTAGE, &battMv, 2);
+#else
+  (void)battMv;   // still read by the callers, for the low-battery logic
+#endif
+#if LOG_HDC_TEMP
+  memcpy(b+OFF_HDC_TEMP, &currentTemp, 2);
+#endif
+#if LOG_HDC_RH
+  memcpy(b+OFF_HDC_RH, &currentRH, 2);
+#endif
+#if LOG_TMP119
+  memcpy(b+OFF_TMP119, &currentTempHA, 2);
+#endif
+#if LOG_DS18B20
+  memcpy(b+OFF_DS18B20, currentTempDS, 2*LOG_DS18B20);
+#endif
+#if LOG_A0
+  memcpy(b+OFF_A0, &currentAnalog[0], 2);
+#endif
+#if LOG_A1
+  memcpy(b+OFF_A1, &currentAnalog[1], 2);
+#endif
+#if LOG_A2
+  memcpy(b+OFF_A2, &currentAnalog[2], 2);
+#endif
+#if LOG_A3
+  memcpy(b+OFF_A3, &currentAnalog[3], 2);
+#endif
+}
 
 // Reads the sensors and appends one record to the flash log.
 // Returns false if any part of the record failed to reach the flash, in which
@@ -247,23 +304,7 @@ bool takeMeasurement(){
   memSendControlByte(POWER_UP);
   unsigned long measurementCount=getCount();
   uint32_t address;
-  // Both I2C sensors run from the permanent 3.3V rail, so there is nothing to
-  // settle before reading them.
-#if LOG_HDC_TEMP || LOG_HDC_RH
-  getTempAndRH();
-#endif
-#if LOG_TMP119
-  getHighAccuracyTemp();
-#endif
-#if LOG_DS18B20
-  getDS18B20Temp();
-#endif
-  // Read while the INTERNAL reference is still in force, before the header
-  // channels switch it to VCC and back.
-  int battMv=getBatteryVoltage();
-#if ANALOG_CHANNELS
-  readAnalogChannels();
-#endif
+  int battMv=readSensors();
   if(measurementCount>0){
     address=measurementCount*BYTES_PER_SAMPLE;
   }else{
@@ -286,42 +327,10 @@ bool takeMeasurement(){
   }
 #endif
 
-  // Temperatures are stored in 0.01°C increments so they fit in two bytes.
-  // && short-circuits, so the first failure abandons the rest of the record.
-  // Each field is written at its OFF_* offset, so a channel switched off simply
-  // is not there and everything after it moves up.
-  bool stored = flashWriteUnsignedLong(address+OFF_TIME, currentTime)
-#if LOG_VOLTAGE
-             && flashWriteInt(address+OFF_VOLTAGE, battMv)
-#endif
-#if LOG_HDC_TEMP
-             && flashWriteInt(address+OFF_HDC_TEMP, currentTemp)
-#endif
-#if LOG_HDC_RH
-             && flashWriteInt(address+OFF_HDC_RH, currentRH)
-#endif
-#if LOG_TMP119
-             && flashWriteInt(address+OFF_TMP119, currentTempHA)
-#endif
-#if LOG_DS18B20
-             && storeDS18B20(address)
-#endif
-#if LOG_A0
-             && flashWriteInt(address+OFF_A0, currentAnalog[0])
-#endif
-#if LOG_A1
-             && flashWriteInt(address+OFF_A1, currentAnalog[1])
-#endif
-#if LOG_A2
-             && flashWriteInt(address+OFF_A2, currentAnalog[2])
-#endif
-#if LOG_A3
-             && flashWriteInt(address+OFF_A3, currentAnalog[3])
-#endif
-             ;
-#if !LOG_VOLTAGE
-  (void)battMv;   // still read above, for the low-battery logic and the I report
-#endif
+  // The whole record in one write: it reaches the flash entire or not at all.
+  byte rec[BYTES_PER_SAMPLE];
+  packRecord(rec, currentTime, battMv);
+  bool stored = writeBytesToFlash(address, rec, BYTES_PER_SAMPLE);
 
   memSendControlByte(POWER_DOWN);
 
@@ -553,22 +562,7 @@ void liveData(unsigned long periodMs){
   bool parado=false;
   while(millis()-inicio < LIVE_MAX_MS){
     getCurrentTime();
-    // Los mismos sensores que takeMeasurement(), y en el mismo orden: la
-    // bateria se lee mientras la referencia INTERNA sigue en vigor, antes de
-    // que los canales analogicos la cambien a VCC y la devuelvan.
-#if LOG_HDC_TEMP || LOG_HDC_RH
-    getTempAndRH();
-#endif
-#if LOG_TMP119
-    getHighAccuracyTemp();
-#endif
-#if LOG_DS18B20
-    getDS18B20Temp();
-#endif
-    int battMv=getBatteryVoltage();
-#if ANALOG_CHANNELS
-    readAnalogChannels();
-#endif
+    int battMv=readSensors();
     printLiveSample(battMv);
     Serial.flush();
     unsigned long espera=millis();
@@ -628,6 +622,14 @@ void liveData(unsigned long periodMs){
   // so a changed record size misaligns everything after the first record and a
   // changed field order misreads the fields within it. The output would still
   // look like a plausible table, which is precisely why it needs saying.
+  // A CONT log carries milliseconds this text dump has no column for, and there
+  // is no program room to add one beside CONT itself. LOGB (the app) and LOGH
+  // read it entire.
+  if(contLogStored()){
+    out << F("CONT log: download it with the app (LOGB), or LOGH + decode_logh.py\n");
+    flashPowerDown();
+    return;
+  }
   if(logFormatMismatch){
     out << F("WARNING: these records were written with a different channel set.\n");
     out << F("The values below are misparsed. Re-flash the firmware that wrote them to read them.\n");
@@ -920,7 +922,7 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec, unsigned long fas
   }
 
   memSendControlByte(POWER_UP);
-  byte stride=BYTES_PER_SAMPLE;
+  byte stride=logStride();
   unsigned long startAddr=fromRec*(unsigned long)stride;
   unsigned long nBytes=(toRec-fromRec+1)*(unsigned long)stride;
   unsigned int nBlocks=(unsigned int)((nBytes + LOGB_BLOCK - 1)/LOGB_BLOCK);
@@ -1071,7 +1073,7 @@ void printMetadata(){
   out << F(" id="); printBoardId(); out << NOSPACER;
   out << F(" sig=");
   printHex16(getUInt(LOG_SIGNATURE_ADDR));
-  out << NOSPACER << F(" rec=") << (unsigned long)BYTES_PER_SAMPLE;
+  out << NOSPACER << F(" rec=") << (unsigned long)logStride();
   out << F(" count=") << getCount();
   out << F(" flash=") << (unsigned long)(SECTOR_SIZE*(MAX_SECTORS+1));
   // La app decide con esto si puede pedir el volcado rapido, en vez de deducirlo de la
@@ -1234,7 +1236,12 @@ void checkLogFormat(){
     return;
   }
   logFormatMismatch = (stored != (unsigned int)LOG_SIGNATURE);
-  if(logFormatMismatch){
+  if(logFormatMismatch && stored==(unsigned int)LOG_SIGNATURE_CONT){
+    // Not a different build: the log of a CONT capture, waiting to be
+    // downloaded (LOGB) before normal logging can start again.
+    out << F("CONT log in flash: download it, then RC. Logging SUSPENDED.\n");
+    setupFailed=true;   // lights the red LED
+  }else if(logFormatMismatch){
     out << (char)(ASTERISK_BAR+3) << NL;
     out << F("LOG FORMAT CHANGED\n");
     out << F("in flash:") << getCount() << F("samples, signature");

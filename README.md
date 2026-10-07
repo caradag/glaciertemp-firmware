@@ -76,6 +76,9 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.8 por defecto (sin canales analogicos) -- medido con `-DWIRE_TIMEOUT`, igual que el 3.7 en las mismas condiciones | 30.030 | 92 % | 907 B (44 %) |
 | firmware 3.8, A0 registrado, alimentacion fija | 31.074 | 95 % | 927 B (45 %) |
 | firmware 3.8, A0 alimentado desde A1 (o A1+A2+A3) | 31.524 / 31.546 | 97 % | 935 B (45 %) |
+| firmware 3.10 por defecto, con CONT (`CONT_CAPTURE` activo) | 32.072 | 99 % | 935 B (45 %) |
+| firmware 3.10 por defecto, `CONT_CAPTURE 0` | 30.212 | 93 % | 907 B (44 %) |
+| firmware 3.10, A0 alimentado desde A1+A2+A3, sin TMP119 (CONT se apaga solo) | 31.196 | 96 % | 953 B (46 %) |
 
 Las filas del 3.8 se midieron con `arduino-cli` y `-DWIRE_TIMEOUT` (el codigo de timeout del
 I2C), que es como compila la placa en terreno; el 3.7 da exactamente los mismos 30.030 bytes
@@ -120,6 +123,34 @@ lectura. Se configura en el bloque `SWITCHED POWER FOR THE SENSORS ON A0..A3` de
   sensor de presion del 2026-10-06: salida FALSA y alta (~1,6 V) durante los primeros ~100 ms
   tras encender, valor real desde 120 ms; se eligio 250 ms. Falta repetirlo en agua con
   hielo: en frio el arranque suele alargarse.
+
+## Captura continua (CONT), para perfiles con dron
+
+| Comando | Que hace |
+|---|---|
+| `CONT ON` | mide y graba sin pausa entre registros (~140 ms con la TMP119 a 8 promedios) |
+| `CONT ON+H` | lo mismo con el bit HEAT del HDC1080, que calienta solo mientras convierte |
+| `CONT?` | estado (`CONT n=... t=...s`); sin captura en marcha responde `CONT idle` |
+| `CONT OFF` | termina e informa `CONT end reason=... n=... dur=...ms mean=...ms max=...ms drift=...ms heater=...` |
+
+- Solo arranca con el log vacio: descargar y `RC` antes. Un log de CONT lleva firma de
+  version 2 (`0x2...`): los mismos canales, con un `uint16` de milisegundos tras los
+  segundos. Despues, el registro normal queda suspendido hasta otro `RC`.
+- La hora: espera el cambio de segundo del RTC y cuenta con `millis()`; `drift` es la
+  diferencia frente al RTC al terminar. Para alinear con el log del dron, la app pone la
+  hora justo en el cambio de segundo.
+- No duerme ni usa la alarma: es un bucle dentro de la sesion de comandos, como `LIVE`.
+  Termina con `CONT OFF`, a la hora, con la memoria llena o con bateria critica. Ignora
+  cualquier otra linea (el Bluetooth se cae en vuelo y eso no la detiene) y escribe una
+  linea de estado cada 10 s.
+- El contador no gasta las ranuras de la EEPROM: CONT mueve la referencia del ultimo
+  reset (`COUNT_RESET = total - n`) cada minuto y al terminar.
+- `LOG`/`LOGC` no leen un log de CONT (no hay sitio en el programa para la columna de
+  ms): se descarga con la app (`LOGB`) o con `LOGH` + `decode_logh.py`, que conocen la
+  version 2.
+- **Espacio**: CONT ocupa ~2 kB. `CONT_CAPTURE` vale `(ANALOG_CHANNELS==0)`: sin canales
+  analogicos cabe (99 %, ~300 B libres), con ellos no (102 % con A0 alimentado desde pines), y se apaga
+  solo.
 
 ## Registro de datos
 

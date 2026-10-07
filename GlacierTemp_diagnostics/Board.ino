@@ -136,7 +136,8 @@ void printSignature(uint16_t sig){
   for(byte i=0;i<4;i++) if(sig & (0x0020<<i)){ P(" A"); Serial.print(i); }
 }
 
-// Bytes per record a signature implies: 4 for the time plus 2 per channel.
+// Bytes per record a signature implies: 4 for the time plus 2 per channel, and 2
+// more for the milliseconds of a CONT log (format version 2).
 byte recordBytes(uint16_t sig){
   byte n=0;
   if(sig & 0x0001) n++;
@@ -145,7 +146,7 @@ byte recordBytes(uint16_t sig){
   if(sig & 0x0008) n++;
   if(sig & 0x0010) n+=((sig>>9)&7)+1;
   for(byte i=0;i<4;i++) if(sig & (0x0020<<i)) n++;
-  return 4+2*n;
+  return ((sig>>12)==2 ? 6 : 4)+2*n;
 }
 
 

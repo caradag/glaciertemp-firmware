@@ -93,8 +93,12 @@ bool dumpAborted = false;
 // ORDEN de los codigos y el formato, no solo que el campo exista.
 unsigned int sensorErrCodes = 0x3218;
 unsigned int sensorErrCount = 1234;
-#define MAX_RECORD_BYTES 12
+#define MAX_RECORD_BYTES 14
 #define LOG_SIGNATURE 0x100F
+// Un log de CONT de esta compilacion: misma mascara, version 2, 2 bytes mas.
+#define CONT_MS_BYTES 2
+#define LOG_SIGNATURE_CONT ((uint16_t)((LOG_SIGNATURE & 0x0FFF) | 0x2000))
+#define BYTES_PER_SAMPLE_CONT (BYTES_PER_SAMPLE + CONT_MS_BYTES)
 uint16_t getUInt(int){ return g_sig; }
 void readBytesFromFlash(uint32_t addr, byte* buf, uint32_t len){
   for(uint32_t i=0;i<len;i++){
@@ -108,7 +112,9 @@ int main(int argc, char** argv){
   // Log sintetico reproducible; el contenido concreto da igual, lo que se
   // comprueba es el encuadre.
   g_count = (argc>1) ? strtoul(argv[1], nullptr, 10) : 100;
-  g_flash.resize((size_t)g_count * BYTES_PER_SAMPLE);
+  // LOGB_CONT=1 en el entorno: el log guardado es de CONT (ver check_cont.py).
+  if(getenv("LOGB_CONT")) g_sig = LOG_SIGNATURE_CONT;
+  g_flash.resize((size_t)g_count * (getenv("LOGB_CONT") ? BYTES_PER_SAMPLE_CONT : BYTES_PER_SAMPLE));
   for(size_t i=0;i<g_flash.size();i++) g_flash[i] = (unsigned char)((i*7 + 13) & 0xFF);
 
   unsigned long from = (argc>2) ? strtoul(argv[2], nullptr, 10) : 0;

@@ -132,7 +132,7 @@ def funciones(bad):
         f'CHECK(daysSince2000({y},{m},{d})=={(datetime.date(y, m, d) - base).days}L, "{y}-{m}-{d}");'
         for y, m, d in casos)
     # Tamano de registro: 4 de la hora + 2 por canal, para varias firmas.
-    firmas = {0x101F: 4 + 2 * 5, 0x1027: 4 + 2 * 4, 0x100F: 4 + 2 * 4,
+    firmas = {0x101F: 4 + 2 * 5, 0x1027: 4 + 2 * 4, 0x100F: 4 + 2 * 4, 0x200F: 6 + 2 * 4,
               0x1000 | 0x1F | (2 << 9) | 0x20: 4 + 2 * (4 + 3 + 1)}
     rec = "\n  ".join(f'CHECK(recordBytes(0x{s:04X})=={n}, "firma 0x{s:04X}");' for s, n in firmas.items())
     cpp = SHIM + r.stdout + MAIN.replace("@@DIAS@@", dias).replace("@@RECORD@@", rec)

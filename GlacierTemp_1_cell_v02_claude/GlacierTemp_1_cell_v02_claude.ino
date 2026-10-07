@@ -283,6 +283,14 @@ unsigned long readULong(char *str, int base=10);
 #define LOG_TMP119    1   // TMP119 high accuracy temperature, centi°C
 #define LOG_DS18B20   0   // NUMBER of DS18B20 sensors on the D3 1-Wire bus. See below.
 
+// CONT ON / CONT ON+H / CONT OFF: continuous capture for vertical profiles from
+// a drone (Continuous.ino). About 2.5 kB of program: with it, the default
+// channel set leaves ~300 bytes free, and the header analog channels do NOT fit
+// alongside it (102 % with A0 switched from A1+A2+A3). So it is on only when no
+// analog channel is logged. Force it with 0 or 1 if needed. Reading a CONT log
+// (LOGB, INFO) works either way.
+#define CONT_CAPTURE  (ANALOG_CHANNELS==0)
+
 //---------------------- EXPANSION HEADER H1, A0..A3 -------------------------
 // Four general purpose analog inputs on header H1 (H1-1=A0 .. H1-4=A3). Each
 // enabled pin is sampled, converted to millivolts through its own two-point
@@ -569,7 +577,8 @@ unsigned long readULong(char *str, int base=10);
 // int for every channel that exists, with the DS18B20 bus full. LOGH uses it as
 // the fallback stride when the log in flash was written by a build whose record
 // size is unknown, so that a raw rescue dump cannot come up short.
-#define MAX_RECORD_BYTES (4 + 2*(4 + MAX_DS18B20 + 4))
+// A CONT record (LOG_FORMAT_CONT below) adds its milliseconds field to that.
+#define MAX_RECORD_BYTES (4 + CONT_MS_BYTES + 2*(4 + MAX_DS18B20 + 4))
 
 // Build signature: which channels this firmware writes, plus the version of the
 // encoding itself. Stored in EEPROM when the log starts and compared at every
@@ -610,6 +619,17 @@ unsigned long readULong(char *str, int base=10);
   | (LOG_A1       ? CH_BIT_A1       : 0) \
   | (LOG_A2       ? CH_BIT_A2       : 0) \
   | (LOG_A3       ? CH_BIT_A3       : 0) ))
+
+// CONT, the continuous capture (Continuous.ino), writes records of format
+// VERSION 2: the same channels as this build, with a uint16 of milliseconds
+// (0..999) right after the seconds. Same channel bits, another version: a
+// reader that only knows version 1 refuses the log instead of misaligning it,
+// and this build's own format check keeps normal logging suspended on a CONT
+// log until RC, so the two kinds of record never share a log.
+#define LOG_FORMAT_CONT 2
+#define CONT_MS_BYTES 2
+#define LOG_SIGNATURE_CONT ((uint16_t)((LOG_SIGNATURE & 0x0FFF) | ((uint16_t)LOG_FORMAT_CONT<<12)))
+#define BYTES_PER_SAMPLE_CONT (BYTES_PER_SAMPLE + CONT_MS_BYTES)
 
 // Set to 0 to make a layout mismatch a warning only, and keep appending records
 // to a log that a single reader can no longer parse. Suspending is the default
@@ -936,8 +956,8 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.9"
-#define PROTOCOL_VERSION 5
+#define FIRMWARE_VERSION "3.10"
+#define PROTOCOL_VERSION 6
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
 // los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
@@ -1157,6 +1177,10 @@ void setup() {
   out << F("TEMP+RH") << PRINT;
   if(i2c_DeviceConnected(HDC1080_ADDR)){
     msgOK();
+    // A reset of the MCU does not reset the HDC1080: a heater left on by a CONT
+    // ON+H that never reached its end would bias every humidity of the next
+    // deployment. Always start with it off.
+    hdcHeater(false);
   }else{
 #if LOG_HDC_TEMP || LOG_HDC_RH
     msgFail();
@@ -1284,6 +1308,8 @@ void loop() {
       // LOG      Dump the whole data log, column aligned
       // LOGC     Dump the whole data log, compact (no sample number, no spaces)
       // LIVE     Read the sensors continuously without logging (LIVE=n for every n ms)
+      // CONT ON  Continuous capture into an empty log, no pause between records
+      //          (CONT ON+H with the HDC1080 heater); CONT OFF stops it, CONT? asks
       // LOGH     Dump the raw log bytes as Intel HEX, decoding nothing (LOGH=n for n bytes)
       // GPS      Aquire GPS position and time
       // H        Help
@@ -1336,6 +1362,14 @@ void loop() {
         // Como los volcados: LIVE se cierra con su propia linea, que ademas dice
         // si paro porque se lo pidieron o porque se acabo el tiempo.
         hiddenCommand=true;
+#if CONT_CAPTURE
+      }else if(!strncasecmp("CONT ON", inputStr, 7)){// Captura continua; CONT ON[+H]
+        // Sin "+H" exacto, sin calentador; la linea "CONT begin" dice cual quedo.
+        contCapture(!strcasecmp("+H", inputStr+7));
+      }else if(!strncasecmp("CONT", inputStr, 4)){
+        // CONT OFF o CONT? sin captura en marcha. La app pregunta al reconectar.
+        out << F("CONT idle\n");
+#endif
       }else if(!strncasecmp("TIME", inputStr, 4)){
         if(inputLength>4){
           if(manualClockAdjust(inputStr)){

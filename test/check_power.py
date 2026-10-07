@@ -103,9 +103,20 @@ def revisar(fuentes):
                        f"o apagar despues")
 
     # 3. La medicion enciende al principio.
+    # Los sensores se leen en readSensors(), que empieza por los I2C.
     tm = cuerpo(eeprom, "bool takeMeasurement(")
-    if tm is None or not orden(tm, "analogPowerOn()", "getTempAndRH()"):
-        bad.append("takeMeasurement(): analogPowerOn() tiene que ir antes de los sensores I2C")
+    rs = cuerpo(eeprom, "int readSensors(")
+    if tm is None or not orden(tm, "analogPowerOn()", "readSensors()"):
+        bad.append("takeMeasurement(): analogPowerOn() tiene que ir antes de readSensors()")
+    if rs is None or not orden(rs, "getTempAndRH()", "getBatteryVoltage()", "readAnalogChannels()"):
+        bad.append("readSensors(): I2C, luego bateria (referencia INTERNA), luego analogicos")
+
+    # 3b. CONT retiene y suelta, y apaga el calentador, despues del bucle.
+    cont = fuentes.get("Continuous.ino", "")
+    cc = cuerpo(cont, "void contCapture(")
+    if cc is None or not orden(cc, "analogPowerHoldOn()", "while(true)", "hdcHeater(false)",
+                                "analogPowerRelease()", "CONT end"):
+        bad.append("contCapture(): retener antes del bucle; calentador y alimentacion fuera despues")
 
     # 4. LIVE retiene y suelta, sin return entre medias.
     i = eeprom.find("analogPowerHoldOn()")

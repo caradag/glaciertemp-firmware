@@ -36,17 +36,21 @@ INVALID  = -32768
 
 
 def layout(sig):
-    """Channel list and record size implied by a 16-bit log signature."""
+    """Channel list, record size and timestamp size implied by a 16-bit log signature.
+
+    Version 1 is the normal log. Version 2 is a CONT capture: the same channels,
+    with a uint16 of milliseconds after the four bytes of seconds."""
     ver = (sig >> 12) & 0x0F
-    if ver != 1:
-        print(f"warning: signature 0x{sig:04X} has format version {ver}, expected 1",
+    if ver not in (1, 2):
+        print(f"warning: signature 0x{sig:04X} has format version {ver}, expected 1 or 2",
               file=sys.stderr)
+    ts = 6 if ver == 2 else 4
     fields = [(n, s, d) for n, b, s, d in CHANNELS if sig & b]
     if sig & DS_BIT:
         n_ds = ((sig & DS_MASK) >> DS_SHIFT) + 1
         fields += [(f"DS{i}", 100.0, 2) for i in range(n_ds)]
     fields += [(n, 1000.0, 3) for n, b in ANALOG if sig & b]
-    return fields, 4 + 2 * len(fields)
+    return fields, ts + 2 * len(fields), ts
 
 
 def read_ihex(path):
@@ -100,7 +104,7 @@ def main():
     if a.raw:
         open(a.raw, "wb").write(data)
 
-    fields, rec = layout(sig)
+    fields, rec, ts = layout(sig)
     print(f"signature 0x{sig:04X}, record {rec} B, {len(data)} B captured, "
           f"{len(data)//rec} whole records", file=sys.stderr)
     print("Time," + ",".join(n for n, _, _ in fields))
@@ -114,12 +118,15 @@ def main():
             continue
         cols = []
         for i, (name, scale, dec) in enumerate(fields):
-            v = int.from_bytes(r[4 + 2 * i:6 + 2 * i], "little", signed=True)
+            v = int.from_bytes(r[ts + 2 * i:ts + 2 + 2 * i], "little", signed=True)
             # Humidity is never negative, so any negative value is a failed read,
             # which also catches the -1 sentinel the older firmware wrote.
             cols.append("NaN" if v == INVALID or (name == "RH" and v < 0)
                         else f"{v/scale:.{dec}f}")
-        print(f"{EPOCH + timedelta(seconds=t):%Y-%m-%d %H:%M:%S}," + ",".join(cols))
+        stamp = f"{EPOCH + timedelta(seconds=t):%Y-%m-%d %H:%M:%S}"
+        if ts == 6:
+            stamp += f".{int.from_bytes(r[4:6], 'little'):03d}"
+        print(stamp + "," + ",".join(cols))
     if blank:
         print(f"{blank} blank/erased records skipped", file=sys.stderr)
 

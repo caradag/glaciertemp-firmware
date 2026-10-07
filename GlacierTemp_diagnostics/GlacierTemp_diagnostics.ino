@@ -35,7 +35,7 @@
 #include <avr/boot.h>
 #include "LowPower.h"
 
-#define DIAG_VERSION "1.3"
+#define DIAG_VERSION "1.4"
 #define BAUDRATE 115200
 
 //------------------------------ WHICH TESTS ---------------------------------
