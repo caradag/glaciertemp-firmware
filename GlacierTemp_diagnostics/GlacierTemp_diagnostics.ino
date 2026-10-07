@@ -35,18 +35,18 @@
 #include <avr/boot.h>
 #include "LowPower.h"
 
-#define DIAG_VERSION "1.0"
+#define DIAG_VERSION "1.1"
 #define BAUDRATE 115200
 
 //------------------------------ WHICH TESTS ---------------------------------
 // Everything does not fit: the full set, verbose as it is, is about 48 kB and
 // the ATmega328P holds 32 kB. So the tests come in two groups, chosen here,
-// and the board is flashed once with each when both are wanted. MCU, POWER,
-// I2C, PINS, LEDS and BT are in both.
+// and the board is flashed once with each when both are wanted. MCU, POWER
+// and I2C are in both.
 //   DIAG_BOARD    EEPROM, RTC (time, square wave, alarm), FLASH, FLASHRW,
-//                 DS18B20, SLEEP
+//                 DS18B20, SLEEP, PINS, LEDS, BT
 //   DIAG_SENSORS  HDC1080, TMP119 (and noise vs averaging), A0..A3, SETTLE,
-//                 STEP, TIMING
+//                 STEP, PWR, TIMING
 #define DIAG_BOARD   1
 #define DIAG_SENSORS 2
 #define DIAG_MODE DIAG_SENSORS
@@ -199,10 +199,10 @@ void printHelp(){
   PL(" MCU              chip signature, fuses, reset cause");
   PL(" POWER            3.3V rail (bandgap) and battery reading");
   PL(" I2C              bus scan: who answers, who is missing");
+#if WITH_BOARD
   PL(" PINS             every pin: direction, pull-up, level");
   PL(" LEDS             blinks green, then red");
   PL(" BT               bluetooth module STATE pin");
-#if WITH_BOARD
   PL(" EEPROM           logger configuration, calibrations, counters");
   PL(" RTC              DS3231 time, flags, temperature, aging");
   PL(" RTCSQW           MCU crystal vs RTC (1.024 kHz on INT/SQW)");
@@ -217,13 +217,14 @@ void printHelp(){
   PL(" HDC [n]          HDC1080 IDs, config and n readings with noise");
   PL(" HDCHEAT          HDC1080 heater: does the sensor respond?");
   PL(" TMP [n]          TMP119 IDs, config, offset and n readings");
-  PL(" TMPAVG [n]       TMP119 noise vs averaging 0/8/32/64, n rounds");
+  PL(" TMPAVG [n]       TMP119 noise vs averaging 0/8/32/64, n rounds (30)");
   PL(" ANALOG           A0..A3: counts, mV, noise, open or driven");
   PL(" SETTLE [s] [pp]  settle-time sweep: sensor on As, powered from pins");
   PL("                  pp (digits, e.g. 123 = A1+A2+A3). Default 0 123");
   PL(" STEP [s] [pp]    sensor output vs time after power-on");
+  PL(" PWR [s] [pp] [t] power on, read As every second for t s (60)");
   PL(" TIMING           how long each reading takes the logger");
-  PL(" Board tests (EEPROM, RTC, FLASH, DS, SLEEP...): build with");
+  PL(" Board tests (EEPROM, RTC, FLASH, DS, SLEEP, PINS, LEDS, BT): build with");
   PL(" DIAG_MODE DIAG_BOARD.");
 #endif
   PL(" HELP             this list");
@@ -270,10 +271,10 @@ void runCommand(const char* c){
   else if(is(c,"MCU"))      testMcu();
   else if(is(c,"POWER"))    testPower();
   else if(is(c,"I2C"))      testI2c();
+#if WITH_BOARD
   else if(is(c,"PINS"))     testPins();
   else if(is(c,"LEDS"))     testLeds();
   else if(is(c,"BT"))       testBluetooth();
-#if WITH_BOARD
   else if(is(c,"EEPROM"))   testEeprom();
   else if(is(c,"RTCSQW"))   testRtcSqw();
   else if(is(c,"RTCALARM")) testRtcAlarm();
@@ -290,6 +291,7 @@ void runCommand(const char* c){
   else if(is(c,"ANALOG"))   testAnalog();
   else if(is(c,"SETTLE"))   testSettle(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK));
   else if(is(c,"STEP"))     testStep(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK));
+  else if(is(c,"PWR"))      testSensorPower(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK), argNum(c,3,60));
   else if(is(c,"TIMING"))   testTiming();
 #endif
   else { P("Unknown command (or not in this build). "); PL("Type HELP."); }
@@ -314,8 +316,10 @@ void runAll(){
   testAnalog();
   testTiming();
 #endif
+#if WITH_BOARD
   testBluetooth();
   testPins();
+#endif
   section(F("SUMMARY"));
   P("  PASS "); Serial.print(nPass);
   P("   WARN "); Serial.print(nWarn);
@@ -328,7 +332,7 @@ void runAll(){
   PL("  Not run by ALL: FLASHRW (writes), SLEEP, LEDS. Sensor tests: DIAG_SENSORS.");
 #else
   PL("  Not run by ALL: TMPAVG (about a minute), SETTLE/STEP (need to know which");
-  PL("  pins carry the sensor), HDCHEAT, LEDS. Board tests: DIAG_BOARD.");
+  PL("  pins carry the sensor), HDCHEAT, PWR. Board tests: DIAG_BOARD.");
 #endif
   digitalWrite(nFail ? LED_PIN : GREEN_LED, HIGH);
   delay(1500);

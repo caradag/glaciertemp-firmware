@@ -24,9 +24,9 @@ elegidos con `DIAG_MODE` al principio del sketch (las dos variantes al 95 %):
 
 | `DIAG_MODE` | Pruebas |
 |---|---|
-| `DIAG_SENSORS` (por defecto) | HDC1080 (IDs, configuracion, ruido, calefactor); TMP119 (ID, offset, lecturas) y **ruido frente a `TMP119_AVERAGING`** (0/8/32/64, intercaladas para que la deriva afecte a todas por igual); A0..A3 (cuentas, mV, ruido, abierto o conectado); **barrido del tiempo de estabilizacion** de un sensor alimentado desde otros pines (`SETTLE 0 123`) y su respuesta al escalon (`STEP`); tiempos de cada lectura |
-| `DIAG_BOARD` | EEPROM del logger (configuracion, calibraciones, contadores, firma del log); RTC (hora, OSF, flags, envejecimiento, temperatura), cristal del MCU contra el RTC, alarma -> linea de despertar; flash (ID, estado, power-down, coherencia log/contador) y prueba de escritura en el ultimo sector solo si esta vacio; bus 1-Wire; consumo dormido (`SLEEP 30`, despertado por el RTC) |
-| ambos | firma y fusibles del MCU, causa del reinicio, riel de 3,3 V y bateria, escaneo I2C, estado de todos los pines, LEDs, modulo Bluetooth |
+| `DIAG_SENSORS` (por defecto) | HDC1080 (IDs, configuracion, ruido, calefactor); TMP119 (ID, offset, lecturas) y **ruido frente a `TMP119_AVERAGING`** (0/8/32/64, intercaladas para que la deriva afecte a todas por igual); A0..A3 (cuentas, mV, ruido, abierto o conectado); **barrido del tiempo de estabilizacion** de un sensor alimentado desde otros pines (`SETTLE 0 123`, con la caida de tension en reposo; avisa si la salida en reposo esta en un extremo, donde estabilizado y muerto se ven igual) y su respuesta al escalon (`STEP`); `PWR`, alimentacion encendida con lectura cada segundo (para el multimetro o el balde); tiempos de cada lectura |
+| `DIAG_BOARD` | EEPROM del logger (configuracion, calibraciones, contadores, firma del log); RTC (hora, OSF, flags, envejecimiento, temperatura), cristal del MCU contra el RTC, alarma -> linea de despertar; flash (ID, estado, power-down, coherencia log/contador) y prueba de escritura en el ultimo sector solo si esta vacio; bus 1-Wire; consumo dormido (`SLEEP 30`, despertado por el RTC); estado de todos los pines, LEDs, modulo Bluetooth |
+| ambos | firma y fusibles del MCU, causa del reinicio, riel de 3,3 V y bateria, escaneo I2C |
 
 `test/check_diag.py` compara las constantes que el diagnostico copia del logger (pines,
 direcciones, mapa de EEPROM) y prueba en el PC sus funciones puras extraidas del fuente.

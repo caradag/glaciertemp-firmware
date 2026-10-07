@@ -148,7 +148,6 @@ byte recordBytes(uint16_t sig){
   return 4+2*n;
 }
 
-#endif // WITH_BOARD
 
 //--------------------------------- PINS -------------------------------------
 // What every pin is doing right now. In the logger this is what decides the
@@ -204,6 +203,8 @@ void testBluetooth(){
   else if(altos==0) result(R_INFO, F("no connection (or no module fitted)"));
   else              result(R_INFO, F("STATE blinking: module advertising, not connected"));
 }
+
+#endif // WITH_BOARD
 
 #if WITH_SENSORS
 //-------------------------------- TIMING ------------------------------------

@@ -134,8 +134,11 @@ bool tmpOneShot(uint16_t cfgWord, float* tC, unsigned long* ms){
   if(!tmpWrite(TMP119_CONFIG_REG, cfgWord)) return false;
   unsigned long t0=millis();
   uint16_t cfg;
+  // Polled every 5 ms, as the logger does. It was 1 ms: five times the I2C
+  // traffic during the conversion, and bus activity right at the part can warm
+  // it and show up as noise that the logger itself would not see.
   while(true){
-    delay(1);
+    delay(5);
     if(!tmpRead(TMP119_CONFIG_REG, cfg)) return false;
     if(cfg & 0x2000) break;
     if(millis()-t0 > 1500) return false;
@@ -203,7 +206,7 @@ void testTmp(int n){
 // all of it, so it goes straight into the battery budget.
 void testTmpAveraging(int rondas){
   section(F("TMP119 NOISE vs AVERAGING"));
-  if(rondas<5) rondas=5;
+  if(rondas<5){ PL("  Minimum 5 rounds; at least 30 are needed to compare the settings."); rondas=5; }
   if(rondas>200) rondas=200;
   if(!i2cPresent(TMP119_ADDR)){ result(R_FAIL, F("TMP119 does not answer")); return; }
   const uint16_t modos[4]={0x0C00, 0x0C20, 0x0C40, 0x0C60};
