@@ -1537,8 +1537,8 @@ void loop() {
         // sale al cambiar INT, pero sin tener que cambiar nada para preguntarlo.
         printMemoryLifetime();
       }else if(!strcasecmp("CFG", inputStr)){// Descriptor de la compilacion, en hexadecimal
+        // Con el aviso de espera detras, como INFO: solo los volcados (LOGB, LOGH) lo callan.
         printDescriptor();
-        hiddenCommand=true;
       }else if(!strcasecmp("VER", inputStr)){// Version de firmware y de protocolo
         printVersion();
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina
