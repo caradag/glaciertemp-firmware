@@ -171,3 +171,7 @@ void msgFail(){
   setupFailed=true;   // lights the red LED at the end of setup()
   out.direct("FAIL\n");
 }
+// A sensor that does not answer but is not logged: a note, no red LED.
+void msgNotLogged(){
+  out.direct("absent, not logged\n");
+}

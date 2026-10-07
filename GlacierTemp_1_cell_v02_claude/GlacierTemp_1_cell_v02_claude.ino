@@ -936,7 +936,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.8"
+#define FIRMWARE_VERSION "3.9"
 #define PROTOCOL_VERSION 5
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1150,21 +1150,34 @@ void setup() {
     msgFail();
   }
 
+  // A missing sensor lights the red LED only if the build logs it. One that is
+  // not logged changes nothing in the log, so a board with a dead or unfitted
+  // TMP119 built with LOG_TMP119 0 starts clean; the console still says it is
+  // missing.
   out << F("TEMP+RH") << PRINT;
   if(i2c_DeviceConnected(HDC1080_ADDR)){
     msgOK();
   }else{
+#if LOG_HDC_TEMP || LOG_HDC_RH
     msgFail();
+#else
+    msgNotLogged();
+#endif
   }  
 
   out << F("HA TEMP") << PRINT;
   if(i2c_DeviceConnected(TMP119_ADDR)){
     msgOK();
     // The TMP119 boots free-running at ~16uA. Park it in shutdown; every reading
-    // is taken as a one-shot which returns it to shutdown by itself.
+    // is taken as a one-shot which returns it to shutdown by itself. Done also
+    // when it is not logged: unparked, it would drain the cell all the same.
     tmp119Sleep();
   }else{
+#if LOG_TMP119
     msgFail();
+#else
+    msgNotLogged();
+#endif
   }
 
 #if LOG_DS18B20
