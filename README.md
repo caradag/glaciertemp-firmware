@@ -84,6 +84,8 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.11 + calibraciones unificadas (`calMv`), por defecto con CONT | 31.458 | 97 % | -- |
 | idem, A0 alimentado desde pines, sin TMP119 (sin CONT) | 30.386 | 93 % | -- |
 | idem, A0 alimentado desde pines, sin TMP119, con `CONT_CAPTURE 1` forzado | 32.256 | 99 % | -- |
+| firmware 3.12 (descriptor GTFW + comando CFG), por defecto con CONT | 31.672 | 97 % | -- |
+| firmware 3.12, TMP119 + A0 alimentado desde A1+A2+A3 (sin CONT) | 31.140 | 96 % | -- |
 
 Las filas del 3.8 se midieron con `arduino-cli` y `-DWIRE_TIMEOUT` (el codigo de timeout del
 I2C), que es como compila la placa en terreno; el 3.7 da exactamente los mismos 30.030 bytes
@@ -157,6 +159,17 @@ lectura. Se configura en el bloque `SWITCHED POWER FOR THE SENSORS ON A0..A3` de
   analogicos cabe (97 %). Con A0 alimentado desde pines, desde que se unificaron las calibraciones
   cabe con `CONT_CAPTURE 1` forzado (99 %, 128 B libres); el valor automatico lo sigue apagando
   con canales analogicos para conservar margen.
+
+## Descriptor de la compilacion (GTFW) y comando CFG
+
+Desde 3.12 el firmware lleva en la flash un bloque con su configuracion de compilacion: hardware
+(`GT001`), version, fecha, firma del log, promedios de la TMP119, CONT, y para A0..A3 los pines
+que los alimentan, el tiempo de espera y el nombre. Ver `GtfwDescriptor` en el sketch.
+
+- Va en el `.hex`: la app lo busca por la marca `GTFW` y muestra, antes de subir un firmware,
+  que hardware exige y que va a medir y con que pines.
+- `CFG` lo devuelve desde la placa (`CFG <hex>`), para comparar con lo que se va a subir.
+- Ocupa ~57-64 B de datos y ~150 B de codigo (+214 B por defecto).
 
 ## Registro de datos
 

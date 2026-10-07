@@ -964,8 +964,8 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.11"
-#define PROTOCOL_VERSION 6
+#define FIRMWARE_VERSION "3.12"
+#define PROTOCOL_VERSION 7
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
 // los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
@@ -978,6 +978,54 @@ bool logFormatMismatch=false;
 // compilacion con este numero cambiado.
 #define BOARD_TYPE "GT"
 #define BOARD_HW_VERSION "001"
+
+// ------------------------------------------------------------------------------------------
+// DESCRIPTOR DE LA COMPILACION ("GTFW")
+//
+// La version del firmware dice QUE codigo es; no dice COMO se compilo. El mismo 3.12 registra
+// otros canales, o pone A1..A3 como salidas de alimentacion, segun las constantes de arriba,
+// y nada de eso se puede leer despues en el binario: se disuelve en instrucciones. Este bloque
+// lo deja escrito, en la flash y en el .hex, para que quien sube un firmware --la app-- pueda
+// decir ANTES de escribirlo que hardware exige y que va a medir, y con que pines.
+//
+// La placa lo devuelve con el comando CFG; la app lo busca en el .hex por la marca "GTFW".
+// Formato (version 1 del bloque), sin relleno entre campos:
+//   "GTFW"  version del bloque (1)
+//   hardware   texto con NUL, BOARD_TYPE BOARD_HW_VERSION ("GT001")
+//   firmware   texto con NUL, FIRMWARE_VERSION
+//   fecha      texto con NUL, __DATE__ ("Oct  7 2026")
+//   uint16 LOG_SIGNATURE, uint16 TMP119_AVERAGING, uint8 CONT_CAPTURE
+//   uint8 x4  A0..A3_POWER, uint16 x4  A0..A3_SETTLE_MS
+//   nombres A0..A3, cada uno texto con NUL
+// Los textos ocupan lo que miden en esta compilacion, de ahi los sizeof. Enteros en
+// little-endian, como todo en el AVR. Si se cambia, se sube la version del bloque y la app
+// rechaza la que no conoce.
+struct __attribute__((packed)) GtfwDescriptor {
+  char magic[4];
+  uint8_t layout;
+  char hw[sizeof(BOARD_TYPE BOARD_HW_VERSION)];
+  char fw[sizeof(FIRMWARE_VERSION)];
+  char date[sizeof(__DATE__)];
+  uint16_t signature;
+  uint16_t tmp119Averaging;
+  uint8_t cont;
+  uint8_t power[4];
+  uint16_t settleMs[4];
+  char name0[sizeof(A0_NAME)];
+  char name1[sizeof(A1_NAME)];
+  char name2[sizeof(A2_NAME)];
+  char name3[sizeof(A3_NAME)];
+};
+// used: nadie lo lee en el bucle principal salvo CFG, y sin esto el enlazador podria tirarlo,
+// y con el el .hex de una compilacion sin CFG seguiria trayendolo.
+const GtfwDescriptor GTFW PROGMEM __attribute__((used)) = {
+  {'G','T','F','W'}, 1,
+  BOARD_TYPE BOARD_HW_VERSION, FIRMWARE_VERSION, __DATE__,
+  LOG_SIGNATURE, TMP119_AVERAGING, CONT_CAPTURE ? 1 : 0,
+  {A0_POWER, A1_POWER, A2_POWER, A3_POWER},
+  {A0_SETTLE_MS, A1_SETTLE_MS, A2_SETTLE_MS, A3_SETTLE_MS},
+  A0_NAME, A1_NAME, A2_NAME, A3_NAME,
+};
 
 // La consola va a 115200 y no a 230400 porque los modulos Bluetooth --HM-10 y clones-- no
 // pasan de ahi: a 230400 la placa y el modulo sencillamente no se entienden. Ademas es la
@@ -1315,6 +1363,7 @@ void loop() {
       // CALC     Calculates when available memory would run out
       // LOG      Dump the whole data log, column aligned
       // LOGC     Dump the whole data log, compact (no sample number, no spaces)
+      // CFG      Build descriptor (hardware, channels, power pins, names) as hex, for the app
       // LIVE     Read the sensors continuously without logging (LIVE=n for every n ms)
       // CONT ON  Continuous capture into an empty log, no pause between records
       //          (CONT ON+H with the HDC1080 heater); CONT OFF stops it, CONT? asks
@@ -1487,6 +1536,9 @@ void loop() {
         // existia: escribirlo devolvia "comando desconocido". Ahora responde lo mismo que
         // sale al cambiar INT, pero sin tener que cambiar nada para preguntarlo.
         printMemoryLifetime();
+      }else if(!strcasecmp("CFG", inputStr)){// Descriptor de la compilacion, en hexadecimal
+        printDescriptor();
+        hiddenCommand=true;
       }else if(!strcasecmp("VER", inputStr)){// Version de firmware y de protocolo
         printVersion();
       }else if(!strcasecmp("INFO", inputStr)){// Cabecera de metadatos legible por maquina

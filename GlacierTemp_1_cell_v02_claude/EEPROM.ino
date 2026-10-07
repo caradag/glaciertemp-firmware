@@ -1009,6 +1009,20 @@ void dumpLogBinary(unsigned long fromRec, unsigned long toRec, unsigned long fas
 //
 // Version de firmware y de protocolo, sin tocar la memoria flash: es la consulta
 // mas barata que puede hacer una app para decidir si entiende a esta placa.
+// "CFG <hex>": el descriptor GTFW byte a byte. Directo a Serial y no por el stream: son mas
+// de cien caracteres en una linea, y el buffer de linea del stream es de OUT_BUFFER_SIZE.
+// Una linea de maquina, como INFO: la app la lee y la compara con la del .hex.
+void printDescriptor(){
+  Serial.write("CFG ",4);   // write y no print(F()): print de textos en flash no se usa en ningun otro sitio y cuesta 72 B
+  const byte* p=(const byte*)&GTFW;
+  for(byte i=0;i<sizeof(GTFW);i++){
+    byte b=pgm_read_byte(p+i);
+    Serial.write(hexDigit(b>>4));
+    Serial.write(hexDigit(b));
+  }
+  Serial.write('\n');
+}
+
 void printVersion(){
   out << NOSPACER << F("fw=") << F(FIRMWARE_VERSION);
   out << F(" proto=") << PROTOCOL_VERSION;
