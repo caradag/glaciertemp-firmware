@@ -79,6 +79,8 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.10 por defecto, con CONT (`CONT_CAPTURE` activo) | 32.072 | 99 % | 935 B (45 %) |
 | firmware 3.10 por defecto, `CONT_CAPTURE 0` | 30.212 | 93 % | 907 B (44 %) |
 | firmware 3.10, A0 alimentado desde A1+A2+A3, sin TMP119 (CONT se apaga solo) | 31.196 | 96 % | 953 B (46 %) |
+| firmware 3.11 por defecto, con CONT: sin NAME ni XON/XOFF; GPS, MSG y TUNNEL solo si hay GPS o Iridium | 31.454 | 97 % | -- |
+| firmware 3.11, A0 alimentado desde A1+A2+A3, sin TMP119 (sin CONT) | 30.578 | 94 % | -- |
 
 Las filas del 3.8 se midieron con `arduino-cli` y `-DWIRE_TIMEOUT` (el codigo de timeout del
 I2C), que es como compila la placa en terreno; el 3.7 da exactamente los mismos 30.030 bytes
@@ -149,8 +151,8 @@ lectura. Se configura en el bloque `SWITCHED POWER FOR THE SENSORS ON A0..A3` de
   ms): se descarga con la app (`LOGB`) o con `LOGH` + `decode_logh.py`, que conocen la
   version 2.
 - **Espacio**: CONT ocupa ~2 kB. `CONT_CAPTURE` vale `(ANALOG_CHANNELS==0)`: sin canales
-  analogicos cabe (99 %, ~300 B libres), con ellos no (102 % con A0 alimentado desde pines), y se apaga
-  solo.
+  analogicos cabe (97 % en 3.11), con ellos no (en 3.11 faltan 64 B con A0 alimentado desde pines),
+  y se apaga solo.
 
 ## Registro de datos
 

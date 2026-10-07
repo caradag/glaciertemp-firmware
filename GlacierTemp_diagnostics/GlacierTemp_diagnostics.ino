@@ -35,7 +35,7 @@
 #include <avr/boot.h>
 #include "LowPower.h"
 
-#define DIAG_VERSION "1.4"
+#define DIAG_VERSION "1.5"
 #define BAUDRATE 115200
 
 //------------------------------ WHICH TESTS ---------------------------------
@@ -200,6 +200,7 @@ void printHelp(){
   PL(" POWER            3.3V rail (bandgap) and battery reading");
   PL(" I2C              bus scan: who answers, who is missing");
 #if WITH_BOARD
+  PL(" XON n / XOFF n   pin n (0-19) as output, high / low");
   PL(" PINS             every pin: direction, pull-up, level");
   PL(" LEDS             blinks green, then red");
   PL(" BT               bluetooth module STATE pin");
@@ -224,7 +225,7 @@ void printHelp(){
   PL(" STEP [s] [pp]    sensor output vs time after power-on");
   PL(" PWR [s] [pp] [t] power on, read As every second for t s (60)");
   PL(" TIMING           how long each reading takes the logger");
-  PL(" Board tests (EEPROM, RTC, FLASH, DS, SLEEP, PINS, LEDS, BT): build with");
+  PL(" Board tests (EEPROM, RTC, FLASH, DS, SLEEP, PINS, XON/XOFF, LEDS, BT): build with");
   PL(" DIAG_MODE DIAG_BOARD.");
 #endif
   PL(" HELP             this list");
@@ -265,6 +266,20 @@ bool is(const char* cmd, const char* name){
   return !strncmp(cmd, name, n) && (cmd[n]==0 || cmd[n]==' ');
 }
 
+#if WITH_BOARD
+// XON n / XOFF n: un pin como salida, en alto o en bajo. Venia del logger, donde solo
+// servia para probar a mano y ocupaba programa; aqui es su sitio. Deja el pin en OUTPUT:
+// en el logger dependia de que alguien lo hubiera configurado antes.
+void setPin(long pin, byte nivel){
+  if(pin<0 || pin>19){ PL("  Syntax: XON n / XOFF n, n = 0..19 (14..17 = A0..A3)"); return; }
+  if(pin<=1 || pin>=18) PL("  Note: 0/1 are the console UART and 18/19 the I2C bus.");
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, nivel);
+  P("  Pin "); Serial.print(pin);
+  if(nivel) PL(" HIGH"); else PL(" LOW");
+}
+#endif
+
 void runCommand(const char* c){
   if(is(c,"HELP"))          printHelp();
   else if(is(c,"ALL"))      runAll();
@@ -272,6 +287,8 @@ void runCommand(const char* c){
   else if(is(c,"POWER"))    testPower();
   else if(is(c,"I2C"))      testI2c();
 #if WITH_BOARD
+  else if(is(c,"XON"))      setPin(argNum(c,1,-1), HIGH);
+  else if(is(c,"XOFF"))     setPin(argNum(c,1,-1), LOW);
   else if(is(c,"PINS"))     testPins();
   else if(is(c,"LEDS"))     testLeds();
   else if(is(c,"BT"))       testBluetooth();

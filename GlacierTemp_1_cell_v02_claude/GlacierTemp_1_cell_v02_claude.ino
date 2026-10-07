@@ -956,7 +956,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.10"
+#define FIRMWARE_VERSION "3.11"
 #define PROTOCOL_VERSION 6
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1382,9 +1382,12 @@ void loop() {
       }else if(!strcasecmp("I", inputStr)){
         displayExtendedInfo();
       //***** GPS AND SOLAR ELEVATION MASK*****
+#if GPS_INSTALLED
       }else if(!strcasecmp("GPS", inputStr)){
         timeUpdateCall();
+#endif
       //***** IRIDIUM *****
+#if IRIDIUM_INSTALLED
       }else if(!strncasecmp("MSG", inputStr, 3)){
         byte tries=1;
         if(inputLength>3){
@@ -1399,51 +1402,12 @@ void loop() {
           }
           delay(1000);
         }
+#endif
         
       //***** BLUETOOTH *****
       //Connecting message 1: +CONNECTING<<BC:7A:BF:0E:7E:67
       //Connecting message 2: CONNECTED
       //Disconnecting message: +DISC:SUCCESS
-      }else if(!strncasecmp("NAME", inputStr, 4)){
-        // This sets the name of the Bluetooth module
-        if(inputStr[4]=='=' && inputLength>5){
-          for(int i=0;i<40;i++){
-            if(digitalRead(BLUETOOTH_SATUS_PIN)){
-              out << F("Please disconnect\n");
-              delay(500);   
-            }else{
-              delay(1000);
-              out << F("AT+NAME");
-              int pos=5;
-              while(pos<(int)sizeof(inputStr) && inputStr[pos]!='\0'){
-                out << inputStr[pos];
-                pos++;
-              }
-              ln();
-              break;
-            }
-          }
-        }else{
-          out << F("Sintax: NAME=...\n");
-        }
-        
-      // }else if(!strncasecmp("STAT", inputStr)){
-      //   soundMsg(500,1);
-      //           delay(100); 
-      //           soundMsg(500,1);
-      //   SerialPrint(digitalRead(BLUETOOTH_SATUS_PIN));ln();
-      //   for(int i=0;i<20;i++){
-      //     if(digitalRead(BLUETOOTH_SATUS_PIN)){
-      //           soundMsg(500,1);
-      //           delay(100); 
-      //           soundMsg(500,1);
-      //     }else{
-      //           soundMsg(2000,1);
-      //           delay(100); 
-      //           soundMsg(2000,1);
-      //     }
-      //     delay(800);
-      //   }
         
 
       //***** SERIAL PORT MONITORING *****
@@ -1525,15 +1489,7 @@ void loop() {
         printBoardIdStandalone();
       }else if(!strcasecmp("H", inputStr)){// Prints help
         printHelp();
-      }else if(!strncasecmp("XO", inputStr, 2)){// XONn / XOFFn: pone el pin n en alto o en bajo
-        // Una rama para los dos: solo cambian el nivel y el sitio donde empieza el numero.
-        bool on=(inputStr[2]|0x20)=='n';
-        byte pos=on ? 3 : 4;
-        if(inputLength>pos){
-          byte pin=readUL(inputStr+pos);
-          digitalWrite(pin,on);
-          out << "Pin" << pin << (on ? "HIGH\n" : "LOW\n");
-        }
+      // XONn / XOFFn (un pin en alto o en bajo) se movio al firmware de diagnostico.
       }else if(!strcasecmp("V", inputStr)){//
         out << getBatteryVoltage() << "mV (" << getRawBatteryVoltage() << ")\n"; 
       }else if((inputStr[0]|0x20)=='v' && (inputStr[1]=='1' || inputStr[1]=='2')){
@@ -1580,8 +1536,10 @@ void loop() {
       //     delay(1000);
       //   }
       //   iridiumSleep();      
-      }else if(!strcasecmp("TUNNEL", inputStr)){// Prints help  
+#if GPS_INSTALLED || IRIDIUM_INSTALLED
+      }else if(!strcasecmp("TUNNEL", inputStr)){// Puente serie hacia el GPS o el Iridium
         serialTunnelCall();
+#endif
 
       }else if(!strncasecmp("ER", inputStr, 2)){// Prints help  
         //Dismiss errors sent by the HM-10 bluetooth module before establishing a connection
