@@ -287,17 +287,25 @@ int twoPointMv(int refV1,int refC1,int refV2,int refC2,int count){
   return (int)(((long)refV1*d + (long)(refV2-refV1)*(count-refC1))/d);
 }
 
+// Calibrated mV from a block of four ints at base: point 1 mV, point 1 count,
+// point 2 mV, point 2 count. The battery (V1/V2, at REFERENCE_VOLTAGE_1) and
+// each header pin (A01/A02.., at ANALOG_CAL_ADDR + 8*pin) share this layout --
+// checked at compile time in the main file -- so one reader serves all of them.
+int calMv(int base, int count){
+  return twoPointMv(getInt(base), getInt(base+2), getInt(base+4), getInt(base+6), count);
+}
+
 int getBatteryVoltage(){
   // Voltage is calculated using the ecuation of the line throught two points
   // This points are difined by the two reference voltages and corresponding counts values
   // This voltages can be set with the command V1 and V2 and are stored in EEPROM
-  return twoPointMv(getInt(REFERENCE_VOLTAGE_1), getInt(REFERENCE_VOLTAGE_COUNT_1),
-                    getInt(REFERENCE_VOLTAGE_2), getInt(REFERENCE_VOLTAGE_COUNT_2),
-                    getRawBatteryVoltage());
+  return calMv(REFERENCE_VOLTAGE_1, getRawBatteryVoltage());
 }
 
 // eqPos is where the '=' sits in the command: 2 for "V1=", 3 for "A01=".
-void setRefVoltage(char *inputStr, int VOLT_MEM, int VAL_MEM, byte eqPos, int rawCount){
+// VOLT_MEM is the point's mV slot; its count sits in the next int (see calMv).
+void setRefVoltage(char *inputStr, int VOLT_MEM, byte eqPos, int rawCount){
+  int VAL_MEM=VOLT_MEM+2;
   if(inputStr[eqPos]=='=' && strlen(inputStr)>(unsigned)(eqPos+1)){
     // En milivoltios con enteros. Con float, 86 de los valores de 1 a 10 V con tres
     // decimales se guardaban con un milivoltio de menos --"V1=2.001" guardaba 2000--
@@ -315,11 +323,6 @@ void setRefVoltage(char *inputStr, int VOLT_MEM, int VAL_MEM, byte eqPos, int ra
 // the group of header readings rather than around each one. See the long note
 // beside LOG_A0..LOG_A3 in the main file for why this costs what it costs.
 
-// EEPROM address of one calibration slot. pin is 0..3, point is 1 or 2. Each
-// pin owns four ints: point 1 mV, point 1 count, point 2 mV, point 2 count.
-int analogCalAddr(byte pin, byte point, bool wantCount){
-  return ANALOG_CAL_ADDR + pin*8 + (point-1)*4 + (wantCount?2:0);
-}
 
 void analogPinsBegin(){
   analogReference(DEFAULT);
@@ -385,16 +388,13 @@ byte analogPinNumber(byte pin){
 // Calibrated millivolts on one header pin. The reference must already be
 // switched: this is called from inside the grouped read in takeMeasurement().
 int getAnalogMv(byte pin){
-  return twoPointMv(getInt(analogCalAddr(pin,1,false)), getInt(analogCalAddr(pin,1,true)),
-                    getInt(analogCalAddr(pin,2,false)), getInt(analogCalAddr(pin,2,true)),
-                    getRawAnalog(analogPinNumber(pin)));
+  return calMv(ANALOG_CAL(pin), getRawAnalog(analogPinNumber(pin)));
 }
 
 // Handles A01=..., A02=..., A11=... and so on: stores the stated voltage
 // against the count the pin reads right now, exactly as V1/V2 do for the cell.
 void setAnalogRefVoltage(char *inputStr, byte pin, byte point){
-  setRefVoltage(inputStr, analogCalAddr(pin,point,false), analogCalAddr(pin,point,true),
-                3, getRawAnalogPin(pin));
+  setRefVoltage(inputStr, ANALOG_CAL(pin)+(point-1)*4, 3, getRawAnalogPin(pin));
 }
 
 // Reads every enabled header pin in one reference switch

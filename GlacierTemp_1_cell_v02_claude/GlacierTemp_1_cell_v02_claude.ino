@@ -669,6 +669,14 @@ unsigned long readULong(char *str, int base=10);
 #define REFERENCE_VOLTAGE_2 143 // int storing the second reference voltage in milivolts
 #define REFERENCE_VOLTAGE_COUNT_2 145 // int storing the digital count associated with reference voltage 1
 #define ANALOG_CAL_ADDR 147 // Base of the H1 analog calibration table: 4 pins x (int mV, int count) x 2 points = 32 bytes
+// EEPROM block of one header pin (0..3): four ints, as calMv() reads them.
+#define ANALOG_CAL(pin) (ANALOG_CAL_ADDR + (pin)*8)
+// calMv() and setRefVoltage() read every calibration as four consecutive ints
+// (mV1, count1, mV2, count2) from one base address. The block above comes from
+// the initialisation script: if it ever moves these, stop here, not in the field.
+#if REFERENCE_VOLTAGE_COUNT_1 != REFERENCE_VOLTAGE_1+2 || REFERENCE_VOLTAGE_2 != REFERENCE_VOLTAGE_1+4 || REFERENCE_VOLTAGE_COUNT_2 != REFERENCE_VOLTAGE_1+6
+  #error "Battery calibration is no longer four consecutive ints: calMv() would read the wrong slots"
+#endif
 #define LOG_SIGNATURE_ADDR 179 // unsigned int storing the channel signature of the log currently in flash
 // Variables that can be changed by the user
 #define MEASURE_INTERVAL 0 // (unsigned long) Interval between measurements (sec)
@@ -1494,10 +1502,8 @@ void loop() {
         out << getBatteryVoltage() << "mV (" << getRawBatteryVoltage() << ")\n"; 
       }else if((inputStr[0]|0x20)=='v' && (inputStr[1]=='1' || inputStr[1]=='2')){
         // V1=1.234 / V2=1.234: los dos puntos de calibracion, contra la cuenta leida ahora
-        bool second=inputStr[1]=='2';
-        setRefVoltage(inputStr, second ? REFERENCE_VOLTAGE_2 : REFERENCE_VOLTAGE_1,
-                      second ? REFERENCE_VOLTAGE_COUNT_2 : REFERENCE_VOLTAGE_COUNT_1,
-                      2, getRawBatteryVoltage());
+        // El punto n esta 4 bytes despues del anterior (ver calMv).
+        setRefVoltage(inputStr, REFERENCE_VOLTAGE_1+(inputStr[1]-'1')*4, 2, getRawBatteryVoltage());
 #if ANALOG_CHANNELS
       // Expansion header H1. "A0" alone reports the pin, "A01=1.234" and
       // "A02=1.234" store its two calibration points, and the same for A1..A3.
@@ -1508,8 +1514,7 @@ void loop() {
         if(analogPinEnabled(pin)){
           int count=getRawAnalogPin(pin);
           out << analogPinName(pin) << ':';
-          out << '\xB3' << twoPointMv(getInt(analogCalAddr(pin,1,false)), getInt(analogCalAddr(pin,1,true)),
-                                       getInt(analogCalAddr(pin,2,false)), getInt(analogCalAddr(pin,2,true)), count)
+          out << '\xB3' << calMv(ANALOG_CAL(pin), count)
               << "V (" << count << ")\n";
         }else{
           out << F("Pin not enabled at compile time\n");
