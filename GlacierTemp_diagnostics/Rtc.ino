@@ -130,7 +130,7 @@ void testRtc(){
   if(st&0x80) result(R_WARN, F("OSF set: the oscillator stopped at some point (power loss), so the time may be wrong"));
   if(st&0x08) result(R_WARN, F("32 kHz output enabled: it costs current and is not used"));
   if(!(ctrl&0x04)) result(R_WARN, F("INTCN clear: INT/SQW is a square wave, alarms cannot wake the logger"));
-  if(ctrl&0x40) result(R_WARN, F("BBSQW set: square wave/interrupt also on battery backup"));
+  if(ctrl&0x40) result(R_INFO, F("BBSQW set (left so by the logger's clock check; harmless with INTCN=1)"));
   if(st&0x03) result(R_INFO, F("an alarm flag is pending (normal right after a wake-up; the logger clears it)"));
 
   int8_t aging=(int8_t)rtcReadReg(0x10);
@@ -145,11 +145,14 @@ void testRtc(){
 // so this measures the real clock against what the build assumes: a crystal
 // tolerance shows as tens of ppm, a sketch built for the wrong clock as
 // percent. The RTC's own accuracy is +-2 ppm.
+// BBSQW must be set, as the logger's frequency() does (0b01001000): on this
+// board the DS3231 runs from VBAT, and on VBAT the square wave only comes out
+// with BBSQW=1. Alarms do not need it, so RTCALARM passes either way.
 void testRtcSqw(){
   section(F("MCU CLOCK vs RTC"));
   if(!i2cPresent(CLOCK_ADDRESS)){ result(R_FAIL, F("no RTC")); return; }
   byte ctrl=rtcReadReg(0x0E);
-  rtcWriteReg(0x0E, 0x08);              // INTCN=0, RS=01: 1.024 kHz on INT/SQW
+  rtcWriteReg(0x0E, 0x48);              // BBSQW=1, INTCN=0, RS=01: 1.024 kHz on INT/SQW
   pinMode(WAKEUP_PIN, INPUT_PULLUP);
   bool ok=true;
   unsigned long lim=millis();
@@ -164,7 +167,7 @@ void testRtcSqw(){
   unsigned long dt=micros()-t0;
   rtcWriteReg(0x0E, ctrl);
   rtcWriteReg(0x0F, rtcReadReg(0x0F) & ~0x03);
-  if(!ok){ result(R_FAIL, F("no square wave on INT/SQW: the line to D2 is open, or the RTC ignores it")); return; }
+  if(!ok){ result(R_FAIL, F("no square wave on INT/SQW (the alarm path is tested by RTCALARM)")); return; }
   float ppm=((float)dt/4000000.0 - 1.0)*1e6;
   label(F("4096 edges took")); Serial.print(dt); PL(" us (4000000 expected)");
   label(F("MCU clock")); Serial.print((float)F_CPU*(1.0+ppm/1e6), 0); P(" Hz  ("); Serial.print(ppm, 0); PL(" ppm)");
