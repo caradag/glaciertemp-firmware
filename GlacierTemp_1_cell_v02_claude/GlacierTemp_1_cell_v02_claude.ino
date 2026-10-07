@@ -284,12 +284,11 @@ unsigned long readULong(char *str, int base=10);
 #define LOG_DS18B20   0   // NUMBER of DS18B20 sensors on the D3 1-Wire bus. See below.
 
 // CONT ON / CONT ON+H / CONT OFF: continuous capture for vertical profiles from
-// a drone (Continuous.ino). About 2.5 kB of program: with it, the default
-// channel set leaves ~300 bytes free, and the header analog channels do NOT fit
-// alongside it (102 % with A0 switched from A1+A2+A3). So it is on only when no
-// analog channel is logged. Force it with 0 or 1 if needed. Reading a CONT log
-// (LOGB, INFO) works either way.
-#define CONT_CAPTURE  (ANALOG_CHANNELS==0)
+// a drone (Continuous.ino). About 2 kB of program. With the compiler's LTO on
+// (MiniCore's default) and the I2C timeout, even TMP119 + A0 switched from
+// A1+A2+A3 + CONT fits: 30.908 B, 95 %. Set to 0 only to free that space.
+// Reading a CONT log (LOGB, INFO) works either way.
+#define CONT_CAPTURE  1
 
 //---------------------- EXPANSION HEADER H1, A0..A3 -------------------------
 // Four general purpose analog inputs on header H1 (H1-1=A0 .. H1-4=A3). Each
@@ -964,7 +963,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.12"
+#define FIRMWARE_VERSION "3.13"
 #define PROTOCOL_VERSION 7
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1181,11 +1180,14 @@ void setup() {
   //
   // The timeout code is already present in the Wire library (utility/twi.c) but
   // MiniCore compiles it out unless WIRE_TIMEOUT is defined for EVERY translation
-  // unit, libraries included. build_opt.h is the usual way to do that, but the
-  // arduino-cli bundled with IDE 2.3.0 does not implement build_opt.h, so the
-  // define has to come from platform.local.txt -- see README_build_opt.txt.
+  // unit, libraries included. The IDE does not read build_opt.h for this core,
+  // so the define comes from a platform.local.txt next to MiniCore's
+  // platform.txt -- see README_build_opt.txt for the exact lines and why the
+  // obvious compiler.*.extra_flags does NOT work (it switches LTO off).
   // The call is guarded so the sketch builds either way; if the guard is false
-  // there is NO I2C timeout and the watchdog is the only protection.
+  // there is NO I2C timeout, and nothing recovers a bus held low (this logger
+  // does not use the watchdog). The IDE hides the #warning below unless
+  // File > Preferences > Compiler warnings is set to Default or More.
   #if defined(WIRE_TIMEOUT)
     Wire.setWireTimeout(25000, true);
   #else

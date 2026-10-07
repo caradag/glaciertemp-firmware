@@ -47,10 +47,17 @@ Las librerias viven en `~/Documents/sketchbook/libraries`, que NO es el sketchbo
 defecto de `arduino-cli`; sin decirselo, la compilacion falla por `LowPower.h`:
 
 ```bash
-arduino-cli compile --fqbn MiniCore:avr:328 \
+arduino-cli compile --fqbn MiniCore:avr:328:clock=7_3728MHz_external,BOD=2v7,variant=modelP \
   --libraries ~/Documents/sketchbook/libraries \
+  --build-property "build.extra_flags={build.clkpr} -DWIRE_TIMEOUT" \
   GlacierTemp_1_cell_v02_claude
 ```
+
+**El timeout de I2C (`-DWIRE_TIMEOUT`) y la LTO.** El timeout tiene que definirse para todo,
+librerias incluidas. En el IDE se hace con un `platform.local.txt` en la carpeta de MiniCore;
+ver `GlacierTemp_1_cell_v02_claude/README_build_opt.txt`. **No** pasarlo por
+`compiler.c/cpp.extra_flags`: MiniCore pone ahi `-flto` (menu "Compiler LTO", activo por
+defecto), y reemplazarlo apaga la LTO y agranda el firmware unos 2 kB.
 
 ### Ocupacion de flash de programa
 
@@ -86,10 +93,15 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | idem, A0 alimentado desde pines, sin TMP119, con `CONT_CAPTURE 1` forzado | 32.256 | 99 % | -- |
 | firmware 3.12 (descriptor GTFW + comando CFG), por defecto con CONT | 31.672 | 97 % | -- |
 | firmware 3.12, TMP119 + A0 alimentado desde A1+A2+A3 (sin CONT) | 31.140 | 96 % | -- |
+| **firmware 3.13 por defecto (CONT siempre), LTO + timeout** | **29.592** | **91 %** | 902 B (44 %) |
+| **firmware 3.13, TMP119 + A0 alimentado desde A1+A2+A3 + CONT, LTO + timeout** | **30.908** | **95 %** | 930 B (45 %) |
 
-Las filas del 3.8 se midieron con `arduino-cli` y `-DWIRE_TIMEOUT` (el codigo de timeout del
-I2C), que es como compila la placa en terreno; el 3.7 da exactamente los mismos 30.030 bytes
-en esas condiciones, de modo que la configuracion por defecto del 3.8 no cambia el binario.
+**Ojo con las filas del 3.8 al 3.12: estan medidas SIN LTO.** Se pasaba `-DWIRE_TIMEOUT` por
+`compiler.*.extra_flags`, que es donde MiniCore pone `-flto`, y eso la apagaba: salen unos 2 kB
+mas grandes que lo real y llevaron a creer que CONT no cabia junto a los canales analogicos.
+Sirven para comparar entre si, no como tamanos reales. Las filas del 3.13 en adelante se miden
+con LTO y con el timeout de I2C (`build.extra_flags`, ver arriba), que es como debe compilarse
+para terreno. El timeout, con LTO, cuesta 736 B.
 
 ## AJUSTES DE PLACA OBLIGATORIOS
 
@@ -155,10 +167,8 @@ lectura. Se configura en el bloque `SWITCHED POWER FOR THE SENSORS ON A0..A3` de
 - `LOG`/`LOGC` no leen un log de CONT (no hay sitio en el programa para la columna de
   ms): se descarga con la app (`LOGB`) o con `LOGH` + `decode_logh.py`, que conocen la
   version 2.
-- **Espacio**: CONT ocupa ~2 kB. `CONT_CAPTURE` vale `(ANALOG_CHANNELS==0)`: sin canales
-  analogicos cabe (97 %). Con A0 alimentado desde pines, desde que se unificaron las calibraciones
-  cabe con `CONT_CAPTURE 1` forzado (99 %, 128 B libres); el valor automatico lo sigue apagando
-  con canales analogicos para conservar margen.
+- **Espacio**: CONT ocupa ~2 kB y desde 3.13 esta siempre activo (`CONT_CAPTURE 1`). Con LTO y
+  el timeout de I2C cabe incluso con TMP119 + A0 alimentado desde pines (30.908 B, 95 %).
 
 ## Descriptor de la compilacion (GTFW) y comando CFG
 
