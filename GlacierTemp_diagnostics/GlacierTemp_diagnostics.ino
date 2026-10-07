@@ -35,7 +35,7 @@
 #include <avr/boot.h>
 #include "LowPower.h"
 
-#define DIAG_VERSION "1.1"
+#define DIAG_VERSION "1.2"
 #define BAUDRATE 115200
 
 //------------------------------ WHICH TESTS ---------------------------------
@@ -219,8 +219,8 @@ void printHelp(){
   PL(" TMP [n]          TMP119 IDs, config, offset and n readings");
   PL(" TMPAVG [n]       TMP119 noise vs averaging 0/8/32/64, n rounds (30)");
   PL(" ANALOG           A0..A3: counts, mV, noise, open or driven");
-  PL(" SETTLE [s] [pp]  settle-time sweep: sensor on As, powered from pins");
-  PL("                  pp (digits, e.g. 123 = A1+A2+A3). Default 0 123");
+  PL(" SETTLE [s] [pp] [r] settle-time sweep: sensor on As, powered from pins");
+  PL("                  pp (digits, 123 = A1+A2+A3), r trials. Default 0 123 3");
   PL(" STEP [s] [pp]    sensor output vs time after power-on");
   PL(" PWR [s] [pp] [t] power on, read As every second for t s (60)");
   PL(" TIMING           how long each reading takes the logger");
@@ -289,7 +289,7 @@ void runCommand(const char* c){
   else if(is(c,"TMPAVG"))   testTmpAveraging(argNum(c,1,30));
   else if(is(c,"TMP"))      testTmp(argNum(c,1,20));
   else if(is(c,"ANALOG"))   testAnalog();
-  else if(is(c,"SETTLE"))   testSettle(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK));
+  else if(is(c,"SETTLE"))   testSettle(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK), argNum(c,3,3));
   else if(is(c,"STEP"))     testStep(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK));
   else if(is(c,"PWR"))      testSensorPower(argNum(c,1,DIAG_SENSOR_PIN), argMask(c,2,DIAG_POWER_MASK), argNum(c,3,60));
   else if(is(c,"TIMING"))   testTiming();

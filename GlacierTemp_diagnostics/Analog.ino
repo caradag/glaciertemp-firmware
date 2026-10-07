@@ -51,14 +51,19 @@ void testAnalog(){
 
 //------------------------------- SETTLE -------------------------------------
 // How long a sensor powered from header pins needs before its output can be
-// trusted. Procedure, for each candidate time t:
-//   power off, wait for the sensor to discharge, power on, wait t, read the pin
-//   exactly as the logger does (one discarded conversion + mean of 21)
-// repeated several times, against a reference taken after 3 s of power. The
-// shortest t from which every longer t also lands within tolerance of the
-// reference is the value for Ax_SETTLE_MS.
-#define SETTLE_REPS 5
+// trusted. Each trial:
+//   power off, wait SETTLE_OFF_MS for the sensor to discharge, power on,
+//   wait t and read the pin exactly as the logger does (one discarded
+//   conversion + mean of 21), keep it powered until 3 s and read it again.
+// The deviation is the reading at t MINUS the reading at 3 s OF THE SAME
+// POWER-ON. Comparing against one reference taken at the start did not work in
+// the field: a sensor in a bucket drifts for minutes while it takes the water
+// temperature, the sweep lasts minutes too, and the later rows drifted out of
+// tolerance without anything being wrong with the settle time. Paired, the
+// slow drift cancels and only what happens after power-on is left.
+#define SETTLE_REPS 3
 #define SETTLE_OFF_MS 1000
+#define SETTLE_FINAL_MS 3000
 
 void settleOff(byte mask){ PORTC &= ~mask; }
 void settleOn(byte mask){ PORTC |= mask; }
@@ -75,13 +80,21 @@ void printMask(byte mask){
   for(byte i=0;i<4;i++) if(mask & (1<<i)){ if(!primero) P("+"); P("A"); Serial.print(i); primero=false; }
 }
 
-void testSettle(long s, byte mask){
+void testSettle(long s, byte mask, long reps){
   section(F("SETTLE TIME SWEEP"));
   if(!settleArgsOk(s, mask)) return;
+  if(reps<1) reps=1;
+  if(reps>10) reps=10;
   byte pin=A0+s;
+  // 120 and 150 bracket what the logger already spends on the I2C sensors
+  // before the analog pins (~150 ms, see TIMING): settling inside that is free.
+  const unsigned int tiempos[]={0, 1, 2, 5, 10, 20, 50, 100, 120, 150, 200, 300, 500, 1000, 2000};
+  const byte nt=sizeof(tiempos)/sizeof(tiempos[0]);
   P("  Sensor read on A"); Serial.print(s); P(", powered from "); printMask(mask);
-  P(". "); Serial.print(SETTLE_REPS); P(" trials per time, "); Serial.print(SETTLE_OFF_MS); PL(" ms off between trials.");
-  PL("  Takes about 100 s. Do not touch the sensor or its wiring meanwhile.");
+  P(". "); Serial.print(reps); P(" trials per time; each one compared with its own reading at ");
+  Serial.print(SETTLE_FINAL_MS/1000); PL(" s.");
+  P("  Takes about "); Serial.print(nt*reps*(SETTLE_OFF_MS+SETTLE_FINAL_MS)/60000.0, 1);
+  PL(" min. Do not touch the sensor or its wiring meanwhile.");
   pinMode(pin, INPUT); digitalWrite(pin, LOW);
   settleOff(mask);
   DDRC |= mask;
@@ -89,13 +102,15 @@ void testSettle(long s, byte mask){
 
   // Supply actually reaching the sensor: the power pin itself, read by the ADC
   // while it drives. Against VCC, so the ratio is exact whatever VCC is. Read
-  // twice: at 50 ms, during the sensor's start-up, and after 3 s, when it draws
+  // twice: at 50 ms, during the sensor's start-up, and at 3 s, when it draws
   // its steady current -- the second is the one that sets the gain error.
+  // The same 3 s also gives the noise of one averaged reading, which sets the
+  // tolerance.
   settleOn(mask);
   delay(50);
   byte p0=0; while(!(mask & (1<<p0))) p0++;
   float cpow50=adcMean(A0+p0, BATT_SAMPLES);
-  delay(2950);
+  delay(SETTLE_FINAL_MS-50);
   Stat ref; ref.clear();
   for(byte i=0;i<16;i++) ref.add(adcMean(pin, BATT_SAMPLES));
   float cpow=adcMean(A0+p0, BATT_SAMPLES);
@@ -108,45 +123,51 @@ void testSettle(long s, byte mask){
   P(" % of VCC (drop ~"); Serial.print(caida*vcc/100.0, 0); PL(" mV)");
   P("  Ratiometric sensor: the steady drop is a gain error of "); Serial.print(caida, 2); PL(" %.");
   bool cal;
-  label(F("Reference after 3 s")); Serial.print(ref.mean, 2); P(" counts, sd "); Serial.print(ref.sd(), 2);
+  label(F("Level at 3 s")); Serial.print(ref.mean, 2); P(" counts, sd "); Serial.print(ref.sd(), 2);
   P("  = "); Serial.print(headerMv(s, ref.mean, &cal)); if(cal) PL(" mV (cal)"); else PL(" mV (nominal)");
-  float tol=ref.sd()*3.0; if(tol<1.0) tol=1.0;
-  label(F("Tolerance")); Serial.print(tol, 2); PL(" counts (3 sd of the reference, at least 1)");
-  // A reference at a rail cannot tell "settled" from "dead": 0 V is also what a
+  // A difference of two readings carries the noise of both: sqrt(2) x sd.
+  float tol=ref.sd()*1.41421*3.0; if(tol<1.0) tol=1.0;
+  label(F("Tolerance")); Serial.print(tol, 2); PL(" counts (3 sd of a difference, at least 1)");
+  // A level at a rail cannot tell "settled" from "dead": 0 V is also what a
   // sensor with no output, a broken wire or an output clamped by a fault reads.
   // The sweep still runs -- the start-up transient is worth seeing -- but its
   // verdict is not trusted.
   bool enRiel=(ref.mean<=3.0 || ref.mean>=1020.0);
   if(enRiel){
-    result(R_WARN, F("reference at a rail (0 V or VCC): settled and dead look the same"));
+    result(R_WARN, F("level at a rail (0 V or VCC): settled and dead look the same"));
     PL("  Put the sensor where its output is mid-range (e.g. under water) and repeat.");
   }
 
-  // 120 and 150 bracket what the logger already spends on the I2C sensors
-  // before the analog pins (~150 ms, see TIMING): settling inside that is free.
-  const unsigned int tiempos[]={0, 1, 2, 5, 10, 20, 50, 100, 120, 150, 200, 300, 500, 1000, 2000};
-  const byte nt=sizeof(tiempos)/sizeof(tiempos[0]);
-  float medias[nt], peores[nt];
-  PL("\n    t ms   mean count   dev count   worst dev   within");
+  float medias[nt], finales[nt], peores[nt], desv[nt];
+  P("\n  Measuring t ms: ");
   for(byte k=0;k<nt;k++){
-    Stat d; d.clear();
+    Stat d, c, f; d.clear(); c.clear(); f.clear();
     float peor=0;
-    for(byte r=0;r<SETTLE_REPS;r++){
+    for(byte r=0;r<reps;r++){
       settleOff(mask);
       delay(SETTLE_OFF_MS);
       settleOn(mask);
+      unsigned long on=millis();
       delay(tiempos[k]);
-      float c=adcMean(pin, BATT_SAMPLES);
+      float ct=adcMean(pin, BATT_SAMPLES);
+      while(millis()-on < SETTLE_FINAL_MS);
+      float cf=adcMean(pin, BATT_SAMPLES);
       settleOff(mask);
-      d.add(c);
-      if(fabs(c-ref.mean)>fabs(peor)) peor=c-ref.mean;
+      c.add(ct); f.add(cf); d.add(ct-cf);
+      if(fabs(ct-cf)>fabs(peor)) peor=ct-cf;
     }
-    medias[k]=d.mean; peores[k]=peor;
+    medias[k]=c.mean; finales[k]=f.mean; desv[k]=d.mean; peores[k]=peor;
+    Serial.print(tiempos[k]); P("..");
+  }
+  PL("done");
+  PL("\n    t ms   count at t   count at 3 s   dev count   worst dev   within");
+  for(byte k=0;k<nt;k++){
     P("  "); pad(tiempos[k], 6, 0);
-    P("   "); pad(d.mean, 10, 2);
-    P("  "); pad(d.mean-ref.mean, 10, 2);
-    P("  "); pad(peor, 10, 2);
-    if(fabs(peor)<=tol) P("     yes"); else P("     no");
+    P("   "); pad(medias[k], 10, 2);
+    P("     "); pad(finales[k], 10, 2);
+    P("  "); pad(desv[k], 10, 2);
+    P("  "); pad(peores[k], 10, 2);
+    if(fabs(peores[k])<=tol) P("     yes"); else P("     no");
     Serial.println();
   }
   // The shortest time from which every longer one is also within tolerance.
@@ -155,18 +176,17 @@ void testSettle(long s, byte mask){
     if(fabs(peores[k])<=tol) elegido=k; else break;
   }
   if(elegido<0){
-    result(R_FAIL, F("never within tolerance, even at 2 s: the sensor drifts, or the power pins cannot carry it"));
+    result(R_FAIL, F("not within tolerance even at 2 s: still settling at 2 s, or noisier than the tolerance"));
   }else{
     P("  Shortest settle within tolerance: "); Serial.print(tiempos[elegido]); PL(" ms.");
     P("  Suggested Ax_SETTLE_MS: "); Serial.print(tiempos[elegido]*2 < 10 ? 10 : tiempos[elegido]*2);
     PL(" (twice that, for margin and cold).");
-    if(enRiel) result(R_WARN, F("settle time NOT confirmed: the reference sits at a rail"));
+    if(enRiel) result(R_WARN, F("settle time NOT confirmed: the level sits at a rail"));
     else       result(R_PASS, F("settle time found"));
   }
   PL("  The logger powers the sensor before reading the I2C sensors (see TIMING),");
   PL("  so only the part of the settle time beyond those readings costs awake time.");
   DDRC &= ~mask;
-  (void)medias;
 }
 
 // The sensor's output against time after power-on: single conversions at

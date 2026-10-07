@@ -154,6 +154,13 @@ unsigned long readULong(char *str, int base=10);
 //   32    0x0C40       500 ms     better     noisy site and power to spare
 //   64    0x0C60         1 s      lowest     bench calibration only
 //
+// MEASURED (2026-10-06, rev02 on the bench, TMPAVG 50 in GlacierTemp_diagnostics):
+// sample-to-sample noise 15.8 / 10.3 / 8.3 / 7.1 mC for 0 / 8 / 32 / 64
+// averages. The 0->8 ratio was 1.5, not the 2.8 of white noise: past 8
+// averages what is left is the board's real temperature moving (the HDC1080
+// showed the same), not sensor noise. 32 averages buys 2 mC for four times
+// the awake time, so 8 stays the default.
+//
 // At the 600 s measurement interval, 8 averages costs about 0.02% duty cycle;
 // 64 averages costs about 0.17%, which is comparable to the whole sleep budget.
 // Uncomment ONE of the following, and set TMP119_CONV_TIMEOUT to match. Each
@@ -360,6 +367,33 @@ unsigned long readULong(char *str, int base=10);
 // pin(s), while the ADC measures against VCC, so that drop shows up as a gain
 // error of drop/3300. Calibrating with A01/A02 while powered this way absorbs it
 // at the calibration temperature; more pins in parallel shrink what is left.
+//
+// HOW TO CHOOSE Ax_SETTLE_MS: MEASURE IT. The sketch GlacierTemp_diagnostics
+// (in this repo, DIAG_MODE DIAG_SENSORS) does it on the board:
+//   SETTLE 0 1   power-on sweep: each reading at t is compared with the reading
+//                at 3 s of the same power-on, for t from 0 to 2000 ms;
+//   STEP 0 1     the sensor output against time after power-on;
+//   PWR 0 1 60   power held on, sensor and supply read once a second;
+//   TIMING       how long the I2C sensors take before the analog pins.
+//
+// MEASURED (2026-10-06, rev02, ratiometric pressure sensor on A0 powered from
+// A1, under water in a bucket):
+//   - For the first ~100 ms after power-on the sensor does NOT settle towards
+//     its value: it outputs a false, HIGH level (~1.3-1.7 V, 420-530 counts)
+//     and only drops to the real reading at 100-120 ms. A reading taken inside
+//     that window is not a noisy depth, it is a completely wrong one -- which is
+//     why the margin below matters more than usual.
+//   - From 120 ms on, every trial of five sweeps was within 1 count of the
+//     settled value. Chosen: A0_SETTLE_MS 250, about twice that.
+//   - The logger already spends ~150 ms on the HDC1080, the TMP119 and the
+//     battery before the analog pins, with the sensor already on, so 250 ms
+//     costs only ~100 ms of extra awake time per measurement.
+//   - One power pin drops ~82 mV at the sensor's steady current (~2.7 mA):
+//     a 2.4 % gain error for a ratiometric sensor. Three pins in parallel
+//     should take it to about a third.
+//   - NOT YET MEASURED IN THE COLD. Start-up times often lengthen near 0 C,
+//     which is where this sensor will work: repeat SETTLE in ice water before
+//     trusting 250 ms in the field.
 #define PIN_POWER_NONE 0x00
 #define PIN_POWER_A0   0x01   // the values are the PORTC bits of PC0..PC3
 #define PIN_POWER_A1   0x02
