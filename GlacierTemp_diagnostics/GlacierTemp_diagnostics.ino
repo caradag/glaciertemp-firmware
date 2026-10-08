@@ -35,7 +35,7 @@
 #include <avr/boot.h>
 #include "LowPower.h"
 
-#define DIAG_VERSION "1.5"
+#define DIAG_VERSION "1.6"
 #define BAUDRATE 115200
 
 //------------------------------ WHICH TESTS ---------------------------------
@@ -55,6 +55,36 @@
 #if !WITH_BOARD && !WITH_SENSORS
   #error "DIAG_MODE must be DIAG_BOARD or DIAG_SENSORS"
 #endif
+
+//--------------------------- BUILD DESCRIPTOR ("GTDG") -----------------------
+// What this binary is, written into the flash so that a host can tell from the
+// .hex alone: the GlacioTools app reads it before uploading, checks the
+// hardware, and says it is a diagnostics build that does not log. The logger
+// carries its own descriptor ("GTFW", with log channels and power pins); this
+// one is deliberately different, since none of those fields apply here.
+// Layout 1, no padding: "GTDG", layout, hardware\0, version\0, __DATE__\0,
+// mode\0 ("BOARD" or "SENSORS").
+#define BOARD_TYPE "GT"
+#define BOARD_HW_VERSION "001"
+#if WITH_BOARD
+  #define DIAG_MODE_NAME "BOARD"
+#else
+  #define DIAG_MODE_NAME "SENSORS"
+#endif
+struct __attribute__((packed)) GtdgDescriptor {
+  char magic[4];
+  uint8_t layout;
+  char hw[sizeof(BOARD_TYPE BOARD_HW_VERSION)];
+  char version[sizeof(DIAG_VERSION)];
+  char date[sizeof(__DATE__)];
+  char mode[sizeof(DIAG_MODE_NAME)];
+};
+// The banner prints the mode FROM here, which is what keeps the linker from
+// discarding the block.
+const GtdgDescriptor GTDG PROGMEM __attribute__((used)) = {
+  {'G','T','D','G'}, 1,
+  BOARD_TYPE BOARD_HW_VERSION, DIAG_VERSION, __DATE__, DIAG_MODE_NAME,
+};
 
 //------------------------------- BOARD PINOUT -------------------------------
 // These MUST match the logger (GlacierTemp_1_cell_v02_claude.ino). They are
@@ -167,7 +197,7 @@ void setup(){
   Serial.println();
   PL("==================================================");
   P("GlacierTemp DIAGNOSTICS "); Serial.print(F(DIAG_VERSION));
-  if(WITH_BOARD) PL("  -- BOARD tests"); else PL("  -- SENSOR tests");
+  P("  -- "); Serial.print((const __FlashStringHelper*)GTDG.mode); PL(" tests");
   P("Built "); Serial.print(F(__DATE__)); P(" "); Serial.println(F(__TIME__));
   PL("Read-only: EEPROM, flash log and RTC time are not changed.");
   PL("==================================================");
