@@ -77,13 +77,13 @@ def main():
 
         # Memoria llena: tiene que decirlo y no ofrecer fecha.
         if libres_exacto == 0:
-            if "Memory is FULL" not in text:
+            if "Memory FULL" not in text:
                 errs.append("no avisa de que la memoria esta llena")
             if "Full on:" in text:
                 errs.append("ofrece fecha de llenado con la memoria ya llena")
         # Horizonte largo: fecha omitida en vez de un tiempo unix desbordado.
         elif dias_exacto > 18250:
-            if "more than 50 years" not in text:
+            if "Full in 50+ years" not in text:
                 errs.append("no recorta el horizonte a 50 anos")
             if "Full on:" in text:
                 errs.append("imprime una fecha que desbordaria el tiempo unix")

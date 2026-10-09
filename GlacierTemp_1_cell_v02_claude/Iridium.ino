@@ -1,9 +1,9 @@
 
 void iridiumNotInstalled(){
-  out << F("This system have no Iridium modem installed\n");
+  out << F("System without Iridium\n");
 }
 void noIridiumOrGpsInstalled(){
-  out << F("This system have no GPS or Iridium modem installed\n");
+  out << F("System without GPS or Iridium\n");
 }
 #if IRIDIUM_INSTALLED == 1
 

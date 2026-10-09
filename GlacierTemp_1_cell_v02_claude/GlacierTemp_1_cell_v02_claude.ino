@@ -965,7 +965,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.14"
+#define FIRMWARE_VERSION "3.15"
 #define PROTOCOL_VERSION 7
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1573,14 +1573,14 @@ void loop() {
           out << '\xB3' << calMv(ANALOG_CAL(pin), count)
               << "V (" << count << ")\n";
         }else{
-          out << F("Pin not enabled at compile time\n");
+          out << F("Pin disabled at compile\n");
         }
       }else if(inputStr[0]=='A' && inputStr[1]>='0' && inputStr[1]<='3' && (inputStr[2]=='1' || inputStr[2]=='2')){
         byte pin=inputStr[1]-'0';
         if(analogPinEnabled(pin)){
           setAnalogRefVoltage(inputStr, pin, inputStr[2]-'0');
         }else{
-          out << F("Pin not enabled at compile time\n");
+          out << F("Pin disabled at compile\n");
         }
 #endif
       // }else if(!strncasecmp("XSIG", inputStr)){

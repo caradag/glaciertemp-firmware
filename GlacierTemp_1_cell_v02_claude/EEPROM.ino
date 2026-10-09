@@ -296,7 +296,7 @@ bool takeMeasurement(){
   // signals the user gets if they reflashed and forgot to clear the log.
   if(logFormatMismatch){
 #if SUSPEND_ON_FORMAT_MISMATCH
-    out << F("Log format changed: clear with RC. NOT logging.\n");
+    out << F("Log format changed: do RC. NOT logging.\n");
     return false;
 #else
     out << F("WARNING: log format changed, records are mixed\n");
@@ -633,13 +633,13 @@ void liveData(unsigned long periodMs){
   // is no program room to add one beside CONT itself. LOGB (the app) and LOGH
   // read it entire.
   if(contLogStored()){
-    out << F("CONT log: download it with the app (LOGB), or LOGH + decode_logh.py\n");
+    out << F("CONT log: download with app (LOGB or LOGH)\n");
     flashPowerDown();
     return;
   }
   if(logFormatMismatch){
-    out << F("WARNING: these records were written with a different channel set.\n");
-    out << F("The values below are misparsed. Re-flash the firmware that wrote them to read them.\n");
+    out << F("WARNING: data written with other channel set.\n");
+    out << F("Misread values. Flash original firmware to read.\n");
   }
   if (nSamples>0){
     printLogHeader(compact);
@@ -727,7 +727,7 @@ void liveData(unsigned long periodMs){
     out << nSamples << F("transmitted in") << '\xB2' << elapsedMs/10 << F("seconds");
     if(elapsedMs>0){
       // nSamples is at most 699050, so nSamples*1000 cannot overflow
-      out << "(" << (nSamples*1000UL)/elapsedMs << F("samples per second)");
+      out << "(" << (nSamples*1000UL)/elapsedMs << F("samples/s)");
     }
     ln();
   }else{
@@ -1069,13 +1069,13 @@ void printMemoryLifetime(){
   out << interval << F("s\n");
 
   if(freeRecords==0){
-    out << F("Memory is FULL\n");
+    out << F("Memory FULL\n");
     return;
   }
   // Mas alla de medio siglo la fecha no significa nada y ademas desbordaria el tiempo unix
   // de 32 bits: a un dia de intervalo la memoria vacia dura mil novecientos anos.
   if(days>18250UL){
-    out << F("Full in more than 50 years\n");
+    out << F("Full in 50+ years\n");
     return;
   }
   getCurrentTime();
@@ -1151,9 +1151,9 @@ void displayHistoryHex(unsigned long nBytes, unsigned long fastBaud){
   out << F("LOGH raw memory dump\n");
   out << F("samples:") << nSamples << NL;
   out << F("bytes:") << nBytes << F("of") << flashBytes << NL;
-  out << F("this build record size:") << (unsigned long)BYTES_PER_SAMPLE << NL;
+  out << F("build record size:") << (unsigned long)BYTES_PER_SAMPLE << NL;
   out << F("log signature:"); printHex16(stored); ln();
-  out << F("this build signature:"); printHex16((unsigned int)LOG_SIGNATURE); ln();
+  out << F("build signature:"); printHex16((unsigned int)LOG_SIGNATURE); ln();
   if(logFormatMismatch){
     out << F("MISMATCH: record size below is a guess, dumping at") << (unsigned long)stride << NL;
   }
@@ -1260,20 +1260,20 @@ void checkLogFormat(){
   if(logFormatMismatch && stored==(unsigned int)LOG_SIGNATURE_CONT){
     // Not a different build: the log of a CONT capture, waiting to be
     // downloaded (LOGB) before normal logging can start again.
-    out << F("CONT log in flash: download it, then RC. Logging SUSPENDED.\n");
+    out << F("CONT log in flash: download & RC. Logging SUSPENDED.\n");
     setupFailed=true;   // lights the red LED
   }else if(logFormatMismatch){
     out << (char)(ASTERISK_BAR+3) << NL;
     out << F("LOG FORMAT CHANGED\n");
     out << F("in flash:") << getCount() << F("samples, signature");
     printHex16(stored); ln();
-    out << F("this build's signature:");
+    out << F("build's signature:");
     printHex16((unsigned int)LOG_SIGNATURE); ln();
-    out << F("This build CANNOT read those records.\n");
-    out << F("To recover them, re-flash the firmware that wrote them and dump BEFORE clearing.\n");
-    out << F("Otherwise clear the log with RC.\n");
+    out << F("This build CANNOT read log.\n");
+    out << F("Flash original firmware to read.\n");
+    out << F("Otherwise clear log (RC).\n");
 #if SUSPEND_ON_FORMAT_MISMATCH
-    out << F("Logging is SUSPENDED until then.\n");
+    out << F("Logging SUSPENDED until then.\n");
 #endif
     out << (char)(ASTERISK_BAR+3) << NL;
     setupFailed=true;   // lights the red LED

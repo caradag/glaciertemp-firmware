@@ -66,7 +66,7 @@ unsigned long waitSecondEdge(){
 
 void contCapture(bool heater){
   if(getCount()>0){
-    out << F("CONT needs an empty log: download it, then RC\n");
+    out << F("CONT needs empty log: download & RC\n");
     return;
   }
   memSendControlByte(POWER_UP);
