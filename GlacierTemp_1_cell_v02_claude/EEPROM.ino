@@ -30,7 +30,11 @@ void readConfiguration(){
     timeZone=DEFAULT_TIMEZONE;
   }
 
+#if GPS_INSTALLED || IRIDIUM_INSTALLED
   // RTC adjustment interval (days). Used as DOY % adjustRTCinterval, so 0 is fatal.
+  // Only a GPS or an Iridium modem can correct the clock, so without either the
+  // value is never used and none of this is compiled (the ADJ variable can still
+  // be read and written in EEPROM, to no effect).
   for(byte attempt=0; attempt<3; attempt++){
     adjustRTCinterval=getUInt(varAddr[ADJUST_RTC_INTERVAL]);
     if(adjustRTCinterval>0 && adjustRTCinterval<=MAX_ADJUST_RTC_INTERVAL){
@@ -41,6 +45,7 @@ void readConfiguration(){
     out << F("Bad RTC adjust interval in EEPROM, using default\n");
     adjustRTCinterval=DEFAULT_ADJUST_RTC_INTERVAL;
   }
+#endif
 
   // Low voltage interval multiplier. 0 and 1 both mean "no slow-down", but a
   // blank EEPROM would otherwise read 255 and stretch the interval to a full day.
@@ -113,8 +118,10 @@ bool varLimits(byte varID, long &lo, long &hi){
       lo=1;             hi=MAX_LOW_VOLTAGE_MULTIPLIER;  return true;
     case TIMEZONE:
       lo=MIN_TIMEZONE;  hi=MAX_TIMEZONE;                return true;
+#if GPS_INSTALLED || IRIDIUM_INSTALLED
     case ADJUST_RTC_INTERVAL:
       lo=1;             hi=MAX_ADJUST_RTC_INTERVAL;     return true;
+#endif
     case MESSAGE_FREQUENCY_DAYS:
       lo=0;             hi=MAX_MESSAGE_FREQUENCY_DAYS;  return true;
   }

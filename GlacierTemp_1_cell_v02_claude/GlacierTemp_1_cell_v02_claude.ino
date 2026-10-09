@@ -760,7 +760,9 @@ void(* resetFunc) (void) = 0; //declare reset function @ address 0
 float latitude;
 float longitude;
 int timeZone;
-unsigned int adjustRTCinterval;
+#if GPS_INSTALLED || IRIDIUM_INSTALLED
+unsigned int adjustRTCinterval;   // days between clock corrections; see readConfiguration()
+#endif
 
 
 bool displayNMEA=false;
@@ -963,7 +965,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.13"
+#define FIRMWARE_VERSION "3.14"
 #define PROTOCOL_VERSION 7
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1634,6 +1636,7 @@ void loop() {
     out << (char)(ASTERISK_BAR+1) << F("Daily code") << (char)(ASTERISK_BAR+1) << NL;
     out << (char)(ASTERISK_BAR+3) << NL;
     
+#if GPS_INSTALLED || IRIDIUM_INSTALLED
     // adjustRTCinterval comes from EEPROM and a zero would divide by zero here
     if (adjustRTCinterval>0 && DOY % adjustRTCinterval == 0){
       //Code to execute every ADJUST_RTC_INTERVAL days
@@ -1641,6 +1644,7 @@ void loop() {
         timeUpdateCall();
       #endif
     }
+#endif
     // If the number of days running since last reset is a multiple of MESSAGE_FREQUENCY_DAYS we set the flag messageSent to false
     // so the message is sent, amd if it fails it will be retried on after each of the folowing picture cycles
     byte messageFreq=EEPROM.read(varAddr[MESSAGE_FREQUENCY_DAYS]);
