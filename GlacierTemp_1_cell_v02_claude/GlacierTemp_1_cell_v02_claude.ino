@@ -965,8 +965,8 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.15"
-#define PROTOCOL_VERSION 7
+#define FIRMWARE_VERSION "3.16"
+#define PROTOCOL_VERSION 8
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
 // los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
@@ -1559,7 +1559,9 @@ void loop() {
       }else if((inputStr[0]|0x20)=='v' && (inputStr[1]=='1' || inputStr[1]=='2')){
         // V1=1.234 / V2=1.234: los dos puntos de calibracion, contra la cuenta leida ahora
         // El punto n esta 4 bytes despues del anterior (ver calMv).
-        setRefVoltage(inputStr, REFERENCE_VOLTAGE_1+(inputStr[1]-'1')*4, 2, getRawBatteryVoltage());
+        // Con "V1=1.234>512" la cuenta viene en el comando y no se lee nada.
+        setRefVoltage(inputStr, REFERENCE_VOLTAGE_1+(inputStr[1]-'1')*4, 2,
+                      refCountGiven(inputStr) ? 0 : getRawBatteryVoltage());
 #if ANALOG_CHANNELS
       // Expansion header H1. "A0" alone reports the pin, "A01=1.234" and
       // "A02=1.234" store its two calibration points, and the same for A1..A3.

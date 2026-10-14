@@ -95,6 +95,8 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.12, TMP119 + A0 alimentado desde A1+A2+A3 (sin CONT) | 31.140 | 96 % | -- |
 | **firmware 3.13 por defecto (CONT siempre), LTO + timeout** | **29.592** | **91 %** | 902 B (44 %) |
 | **firmware 3.13, TMP119 + A0 alimentado desde A1+A2+A3 + CONT, LTO + timeout** | **30.908** | **95 %** | 930 B (45 %) |
+| firmware 3.16 por defecto (calibracion con el par completo, `A01=2>258`), LTO + timeout | 29.414 | 90 % | -- |
+| firmware 3.16, TMP119 + A0 alimentado desde A1+A2+A3 + CONT, LTO + timeout | 30.762 | 94 % | -- |
 
 **Ojo con las filas del 3.8 al 3.12: estan medidas SIN LTO.** Se pasaba `-DWIRE_TIMEOUT` por
 `compiler.*.extra_flags`, que es donde MiniCore pone `-flto`, y eso la apagaba: salen unos 2 kB
@@ -138,6 +140,7 @@ lectura. Se configura en el bloque `SWITCHED POWER FOR THE SENSORS ON A0..A3` de
 - Sensor ratiometrico: la caida de tension en los pines aparece como error de ganancia
   (caida/3300 mV). Calibrar con `A01`/`A02` con el sensor alimentado asi la absorbe a la
   temperatura de la calibracion.
+- **Calibracion con el par completo (firmware 3.16, protocolo 8).** `A01=2` guarda 2 contra la cuenta que el pin lee en ese momento; `A01=2>258` guarda el par tal cual, sin leer nada. Lo mismo para `V1=`/`V2=` y para `A11=`.. Es lo que usa la seccion de calibracion de la app, que ajusta una recta a muchas lecturas y manda dos puntos de ella. Una cuenta fuera de 0..1023 contesta `Bad count` y no guarda nada. **Un firmware anterior al 3.16 acepta la forma larga sin quejarse y guarda la cuenta leida**, porque su lector se para en el `>`: por eso la app solo la manda a placas con protocolo 8 o mas. `test/check_calpair.py` lo comprueba sobre el codigo extraido del fuente.
 - `Ax_SETTLE_MS` se mide con el firmware de diagnostico (`SETTLE`, `STEP`, `PWR`). Con el
   sensor de presion del 2026-10-06: salida FALSA y alta (~1,6 V) durante los primeros ~100 ms
   tras encender, valor real desde 120 ms; se eligio 250 ms. Falta repetirlo en agua con

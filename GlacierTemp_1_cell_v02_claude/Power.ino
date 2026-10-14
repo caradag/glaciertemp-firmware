@@ -304,8 +304,23 @@ int getBatteryVoltage(){
 
 // eqPos is where the '=' sits in the command: 2 for "V1=", 3 for "A01=".
 // VOLT_MEM is the point's mV slot; its count sits in the next int (see calMv).
+//
+// "A01=2>258" guarda el par TAL CUAL en vez de la cuenta leida ahora: la app ajusta una
+// recta a muchas lecturas y manda dos puntos de ella. Quien llama no lee el ADC si hay
+// '>' (refCountGiven), y readScaled() se para en el '>', asi que el valor se lee igual
+// que en la forma corta. Una cuenta fuera de 0..1023 es un error de tecleo, y guardarla
+// torceria todas las lecturas siguientes sin que nada lo dijera.
 void setRefVoltage(char *inputStr, int VOLT_MEM, byte eqPos, int rawCount){
   int VAL_MEM=VOLT_MEM+2;
+  const char *gt=strchr(inputStr,'>');
+  if(gt){
+    long given=readScaled(gt+1,0);
+    if(given<0 || given>1023){
+      out << F("Bad count\n");
+      return;
+    }
+    rawCount=(int)given;
+  }
   if(inputStr[eqPos]=='=' && strlen(inputStr)>(unsigned)(eqPos+1)){
     // En milivoltios con enteros. Con float, 86 de los valores de 1 a 10 V con tres
     // decimales se guardaban con un milivoltio de menos --"V1=2.001" guardaba 2000--
@@ -314,6 +329,12 @@ void setRefVoltage(char *inputStr, int VOLT_MEM, byte eqPos, int rawCount){
     EEPROM.put(VAL_MEM,rawCount);
   }
   out << getInt(VOLT_MEM) << "mV->" << getInt(VAL_MEM) << NL;
+}
+
+// "V1=1.234>512": la cuenta viene en el comando y no hay nada que leer. Importa con un
+// sensor conmutado, que si no se encenderia y se esperaria para tirar su cuenta.
+bool refCountGiven(const char *inputStr){
+  return strchr(inputStr,'>')!=NULL;
 }
 
 #if ANALOG_CHANNELS
@@ -392,9 +413,11 @@ int getAnalogMv(byte pin){
 }
 
 // Handles A01=..., A02=..., A11=... and so on: stores the stated voltage
-// against the count the pin reads right now, exactly as V1/V2 do for the cell.
+// against the count the pin reads right now, exactly as V1/V2 do for the cell,
+// or against the count given after '>' ("A01=2>258").
 void setAnalogRefVoltage(char *inputStr, byte pin, byte point){
-  setRefVoltage(inputStr, ANALOG_CAL(pin)+(point-1)*4, 3, getRawAnalogPin(pin));
+  setRefVoltage(inputStr, ANALOG_CAL(pin)+(point-1)*4, 3,
+                refCountGiven(inputStr) ? 0 : getRawAnalogPin(pin));
 }
 
 // Reads every enabled header pin in one reference switch
