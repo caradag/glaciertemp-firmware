@@ -20,10 +20,6 @@ void displayInfo(){
 #if LOG_DS18B20
   getDS18B20Temp();
 #endif
-#if LOG_HCSR04
-  analogPowerOn();
-  getDistance();
-#endif
 #if LOG_HDC_TEMP
   out << F("Temperature (HDC1080):");
   if(currentTemp==INVALID_TEMP){
@@ -60,14 +56,6 @@ void displayInfo(){
     out << F("NaN\n");
   }else{
     out << '\xB1' << currentRH << "%\n";
-  }
-#endif
-#if LOG_HCSR04
-  out << F("Distance (HC-SR04P):");
-  if(currentDist==INVALID_DIST){
-    out << F("NaN\n");
-  }else{
-    out << currentDist << F("cm\n");
   }
 #endif
 #if ANALOG_CHANNELS
@@ -126,7 +114,24 @@ void printSensorErrors(){
 }
 
 void displayExtendedInfo(){  
+#if LOG_HCSR04
+  analogPowerOn();     // se estabiliza mientras se imprime displayInfo(); se lee mas abajo
+#endif
   displayInfo();
+
+#if LOG_HCSR04
+  // La distancia va solo aqui (comando I) y no en displayInfo(), que es tambien el bloque del
+  // arranque: el sensor necesita 800 ms desde que se enciende y el arranque seria mas lento.
+  // Con puntos mientras espera y en cada ping: un silencio de ~1 s la app lo toma por el final
+  // de la respuesta y dice que la placa no contesta.
+  out << F("Distance (HC-SR04P):");
+  getDistance(true);
+  if(currentDist==INVALID_DIST){
+    out << F("NaN\n");
+  }else{
+    out << currentDist << F("cm\n");
+  }
+#endif
 
   // Va aqui y no en displayInfo() para no repetirlo: displayInfo() ya se imprime en el
   // arranque, donde el identificador sale junto a la deteccion de la memoria.

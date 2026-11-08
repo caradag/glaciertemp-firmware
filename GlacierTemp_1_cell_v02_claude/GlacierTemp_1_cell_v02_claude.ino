@@ -1027,7 +1027,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.17"
+#define FIRMWARE_VERSION "3.18"
 #define PROTOCOL_VERSION 8
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman

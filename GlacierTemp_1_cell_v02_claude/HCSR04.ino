@@ -44,7 +44,17 @@ unsigned long hcsr04Ping(){
 
 // Reads the distance into currentDist (cm), or INVALID_DIST. Must run after the
 // temperature sensors: it uses the temperature they just read.
-void getDistance(){
+//
+// progress: for the I command and the startup banner. The sensor needs 800 ms
+// from power-on and the pings take some 400 ms more; in silence, the app takes
+// that pause for the end of the reply (it waits 400-800 ms of quiet) and reports
+// that the board did not answer. With progress, a dot every 200 ms keeps the
+// line alive.
+void getDistance(bool progress){
+  while(progress && millis()-analogPowerOnAt+200 < (unsigned long)PIN_POWER_SETTLE_MS){
+    delay(200);
+    out << '.';
+  }
   analogPowerSettle();                 // on since the start of the cycle; waits what is missing
   DDRC  &= ~HC_ECHO;                   // echo: input, pull-up off
   PORTC &= ~HC_ECHO;
@@ -55,6 +65,9 @@ void getDistance(){
       delay(HCSR04_PING_GAP_MS);
     }
     unsigned long us=hcsr04Ping();
+    if(progress){
+      out << '.';
+    }
     if(us>0){
       // insertion in order: the median is then the middle element
       byte j=n++;

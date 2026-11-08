@@ -99,6 +99,7 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.16, TMP119 + A0 alimentado desde A1+A2+A3 + CONT, LTO + timeout | 30.762 | 94 % | -- |
 | firmware 3.17 por defecto (sin HC-SR04), LTO + timeout | 29.408 | 90 % | 900 B (43 %) |
 | firmware 3.17, `LOG_HCSR04 1` (TMP119 + HDC1080 + CONT), LTO + timeout | 30.488 | 94 % | -- |
+| firmware 3.18, `LOG_HCSR04 1` (distancia solo en I, con puntos de progreso) | 30.680 | 94 % | -- |
 | firmware 3.17, `LOG_HCSR04 1` + 3 DS18B20 + CONT | 33.338 | **102 %, no cabe** | -- |
 | firmware 3.17, `LOG_HCSR04 1` + 3 DS18B20, `CONT_CAPTURE 0` | 31.042 | 95 % | -- |
 
@@ -211,6 +212,11 @@ placa no mide bien). Usa los cuatro pines de H1:
   ecos que vuelven son FALSOS (p. ej. 55 cm con el obstaculo a 8 cm) y pueden pasar la mediana:
   eso daba los 80-100 cm con la primera version (200 ms). 800 = umbral + 20 %, por el frio.
   No bajarla.
+- La distancia sale solo en el comando I (informacion extendida), no en el bloque del arranque:
+  el sensor necesita 800 ms desde que se enciende. En 3.17 iba tambien en el arranque y dejaba
+  ~1,1 s de silencio a mitad del bloque; la app, que da por terminada una respuesta tras
+  400-800 ms sin datos, decia que la placa no contestaba. En I se imprime un punto cada ~200 ms
+  mientras espera y uno por ping ("Distance (HC-SR04P):........ 152cm"), por la misma razon.
 - La distancia se corrige con la temperatura del aire recien medida (TMP119, o HDC1080):
   331,3 + 0,606·T m/s. Sin eso, entre -10 y 20 °C el error es de 5 % (10 cm a 2 m). Exige
   `LOG_TMP119` o `LOG_HDC_TEMP`.

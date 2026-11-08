@@ -241,7 +241,7 @@ __attribute__((noinline)) int readSensors(){
   getDS18B20Temp();
 #endif
 #if LOG_HCSR04
-  getDistance();     // after the temperatures: it corrects with them
+  getDistance(false);  // after the temperatures: it corrects with them
 #endif
   int battMv=getBatteryVoltage();
 #if ANALOG_CHANNELS
