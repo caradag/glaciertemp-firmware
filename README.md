@@ -3,6 +3,17 @@
 Firmware del registrador de temperatura **GlacierTemp 1-cell rev02**, un logger de bajo
 consumo para despliegues largos en glaciares.
 
+
+## Organizacion del encabezado del firmware
+
+El comienzo de `GlacierTemp_1_cell_v02_claude.ino` esta ordenado en secciones numeradas:
+
+1. **Version**: `FIRMWARE_VERSION`, `PROTOCOL_VERSION` e identidad del hardware.
+2. **Configuracion de la compilacion**, lo que se cambia de una placa a otra. Un bloque por sensor con su interruptor `LOG_...` y sus parametros: 2.1 bateria, 2.2 HDC1080, 2.3 TMP119, 2.4 DS18B20, 2.5 HC-SR04P, 2.6 header H1 (A0..A3 y alimentacion conmutada `PIN_POWER`), 2.7 captura continua, 2.8 GPS e Iridium y 2.9 ajustes avanzados.
+3. **Derivado de la configuracion y comprobaciones** (no se edita): disposicion del registro, firma del log, mascaras de `PIN_POWER` y los `#error` de combinaciones invalidas.
+4. **Hardware de la placa**: ajustes de compilacion obligatorios, pines, direcciones I2C y pendientes.
+5. **Memoria EEPROM, variables y el resto del programa.**
+
 ## Sketches
 
 | Sketch | Que hace |
@@ -191,7 +202,7 @@ que los alimentan, el tiempo de espera y el nombre. Ver `GtfwDescriptor` en el s
 
 ## Sensor de distancia ultrasonico HC-SR04P (LOG_HCSR04)
 
-`#define LOG_HCSR04 1` en el bloque de canales registra la distancia `Dist`, en cm, de un
+`#define LOG_HCSR04 1` (seccion 2.5 del encabezado del .ino) registra la distancia `Dist`, en cm, de un
 HC-SR04**P** (la variante de 3-5,5 V; el HC-SR04 clasico necesita 5 V y a los 3,3 V de la
 placa no mide bien). Usa los cuatro pines de H1:
 

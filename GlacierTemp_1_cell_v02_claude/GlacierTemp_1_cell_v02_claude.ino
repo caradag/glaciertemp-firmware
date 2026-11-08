@@ -1,138 +1,99 @@
-// ===========================================================================
-// REQUIRED BOARD SETTINGS (Tools menu / FQBN)
-//   Board .......... MiniCore -> ATmega328
-//   Variant ........ 328P / 328PA
-//   Clock .......... External 7.3728 MHz     <-- NOT 8 MHz, and NOT 16 MHz
-//   BOD ............ 2.7V
-//   Bootloader ..... Yes (UART0)
+//##############################################################################
+//##  GlacierTemp 1-cell rev02 -- firmware del registrador
+//##
+//##  Orden de este encabezado:
+//##    1. Version
+//##    2. Configuracion de la compilacion: lo que se cambia de una placa a otra
+//##       (sensores que se registran, sus parametros, alimentacion por pines de H1)
+//##    3. Derivado de la configuracion y comprobaciones (no se edita)
+//##    4. Hardware de la placa: ajustes de compilacion, pines, direcciones
+//##    5. Memoria EEPROM, variables y el resto del programa
+//##############################################################################
+
+//##############################################################################
+//##  1. VERSION
+//##############################################################################
+
+// Version del firmware y del PROTOCOLO de la consola serie. Son cosas distintas:
+// el firmware cambia con cualquier arreglo, mientras que la version de protocolo
+// solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
+// respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
+// con un protocolo que no entiende, en vez de malinterpretar la respuesta.
+#define FIRMWARE_VERSION "3.18"
+#define PROTOCOL_VERSION 8
+
+// Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
+// los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
 //
-// The 7.3728 MHz crystal is not an arbitrary choice: it divides exactly to the
-// standard rates. With F_CPU 7372800 the core computes UBRR=7 for 115200 and
-// UBRR=3 for 230400, both in double-speed mode and both with ZERO error. That
-// is the whole reason this part is fitted instead of a round 8 MHz one -- at
-// 8 MHz the closest the hardware can get to 230400 is 250000, an 8.5% error,
-// which no receiver will decode.
+//   BOARD_TYPE        que tipo de placa es (Glacier Temp)
+//   BOARD_HW_VERSION  que REVISION del hardware es, no que firmware corre
 //
-// The console runs at 115200 (see BAUDRATE): that is the ceiling of the HM-10
-// bluetooth modules, and it is also what the MiniCore bootloader uses for this
-// clock, so upload, console and bluetooth all speak the same rate. The binary
-// dump can borrow 230400 for its duration over cable -- see dumpLogBinary.
+// FIRMWARE_VERSION cambia con cada arreglo; BOARD_HW_VERSION solo cuando cambia la placa
+// fisica. Como son constantes de compilacion, una revision nueva de placa exige su propia
+// compilacion con este numero cambiado.
+#define BOARD_TYPE "GT"
+#define BOARD_HW_VERSION "001"
+
+//##############################################################################
+//##  2. CONFIGURACION DE LA COMPILACION
+//##  Lo que se cambia de una placa a otra. Cada sensor tiene su bloque: el
+//##  interruptor que lo incluye en el registro y, debajo, sus parametros.
+//##############################################################################
+
+// Each channel below is included in the record, in the console output and in
+// the LOG/LOGC dumps only when its switch is 1. A channel switched off costs
+// nothing at all: the compiler removes its measurement code, its two bytes in
+// the record and its column in the dump.
 //
-// Getting the clock wrong does not fail to build and does not fail to upload;
-// it silently changes the baud rate on the wire, and the console fills with
-// rubbish at what looks like the right setting. Building this sketch for
-// 16 MHz puts 102400 baud on the wire; for 8 MHz the UART survives by
-// coincidence (same UBRR) but every delay() and millis() runs 8.5% fast.
-// Arduino IDE 2.x remembers the board selection PER SKETCH, so setting it on
-// the main firmware does not set it here, or the other way round.
-// ===========================================================================
-
-// Que los comandos respondan tanto comandos terminados en /n como /r/n o /r o sin terminacion
-// Que la app permita enviar comandos aunque la placa no responda como es esperado
-
-
-// Alejar la traza del borde en la parte inferior
-// En el chip de memoria poner pins 7 y 3 con un pull-up the 10 kOhm a VCC (pin 3 flotante consumia 84 uA), y alimentar el chip directo de VCC (no hace falta alimentarlo con un pin IO)
-// Add decoupling capacitor to the flash. From MEM_POWER Add a 100 nF (plus ~1–4.7 µF) next to the chip
-// Order the non-quad variant of the memory chip (ordering option IG/IF), where QE defaults to 0 and /WP and /HOLD are real pins. For dos variants it is OK to tie pins 3 and 7 dirctly to VCC but a resistor is still recommended.
-
-/*
-  GlacierTemp 1-cell rev02 -- board pinout (U19 = ATMEGA328P-MU, VQFN-32).
-  Package pin numbers run counter-clockwise from the pin-1 dot at the top-left.
-  D##/A## are the Arduino / MiniCore names; PB6 and PB7 carry the crystal and
-  are NOT usable as I/O with an external oscillator selected.
-
-                          WAKEUP    TX      RX    RESET    SCL     SDA     H1-4    H1-3
-                            D2      D1      D0     RST      A5      A4      A3      A2
-                           PD2     PD1     PD0     PC6     PC5     PC4     PC3     PC2
-                            32      31      30      29      28      27      26      25
-                        +----------------------------------------------------------------+
-    1-Wire hdr  PD3  D3 | 1                                                            24| PC1  A1  H1-2
-    FLASH VCC   PD4  D4 | 2                                                            23| PC0  A0  H1-1
-                GND     | 3                        ATMEGA328P-MU                       22| ADC7 A7  n/c
-    3.3V        VCC     | 4                             VQFN-32                        21| GND
-                GND     | 5                                U19                         20| AREF     n/c
-    3.3V        VCC     | 6                                                            19| ADC6 A6  Vbatt/6
-    XTAL1       PB6  D20| 7                                                            18| AVCC     3.3V
-    XTAL2       PB7  D21| 8                                                            17| PB5  D13 SCK
-                        +----------------------------------------------------------------+
-                            9       10      11      12      13      14      15      16
-                           PD5     PD6     PD7     PB0     PB1     PB2     PB3     PB4
-                            D5      D6      D7      D8      D9     D10     D11     D12
-                         GRN_LED FLSH_CS BT_STAT  SS_RX   SS_TX  RED_LED   MOSI    MISO
-
-  Legend for the abbreviated signal names:
-    WAKEUP   RTC DS3231 INT/SQW alarm output, wakes the MCU from power-down
-    TX / RX  console UART, shared by the FTDI header and the HM-10 bluetooth
-    SCL/SDA  I2C bus: DS3231 RTC 0x68, HDC1080 0x40, TMP119 0x48
-    H1-1..4  4-pin expansion header H1 (A0..A3)
-    GRN_LED  green LED, lit on a successful measurement and after a reset
-    RED_LED  red LED, lit if a start-up test fails, flashed if a write fails
-    FLSH_CS  W25Q64 flash chip select (has a 47k pull-up to 3.3V, R26)
-    BT_STAT  HM-10 bluetooth connection status input
-    SS_RX/TX AltSoftSerial pins, only used when a GPS or Iridium modem is fitted
-    MOSI/MISO/SCK  SPI to the W25Q64 flash and to the ICSP header
-    FLASH VCC      MEM_POWER: this pin is the flash chip's ONLY supply. Neither
-                   temperature sensor is powered from it; both sit on 3.3V.
-    Vbatt/6        raw cell voltage through the R13/R12 = 10M/2M divider
-
-  CODE SIZE NOTE: the default build uses NO floating point. The soft-float
-  library cost ~1.5 kB and was pulled in by getTempAndRH(), twoPointMv(),
-  runningDays(), readFloat()/updateVar() and setRefVoltage(); since 3.6 they are
-  all integer arithmetic, verified against the float versions (and more exact).
-  A single float anywhere brings the whole library back: check with
-  avr-nm on the .elf that no __addsf3/__mulsf3/__divsf3 symbol appears.
-  Only the GPS and Iridium code still uses float. strtoul() was replaced by
-  readUL() for the same reason (~470 bytes). LTO is already on by default in
-  MiniCore (Tools > Compiler LTO); turning it off costs ~2 kB.
-*/
-
-#include "./lightOStream.h"
-// Buffer de UNA linea. Es un limite duro y silencioso: la linea solo se emite cuando el
-// stream recibe el '\n', y si el buffer se llena antes, ese '\n' no cabe, la linea no se
-// vacia nunca y ARRASTRA a las siguientes hasta que algo la limpie. No se pierde una linea:
-// se pierden todas las que vengan detras.
+// ------------------------- READ THIS FIRST --------------------------------
+// CHANGING ANY OF THESE SWITCHES CHANGES THE RECORD LAYOUT, and records written
+// before the change CANNOT BE READ by a firmware built after it. LOG and LOGC
+// step through the log at this build's BYTES_PER_SAMPLE and read each field at
+// this build's offsets, so a changed record size misaligns every record after
+// the first, and a changed field order misreads the fields inside it. The dump
+// still looks like a neat table, which is exactly what makes it dangerous.
 //
-// Con 127 cabian 126 caracteres contando el salto, y la cabecera INFO ya ocupaba 123. El
-// identificador corto con formato "GT001-XXXXXX" le sumo cuatro y la dejo justo un byte por
-// encima, llevandose por delante tambien la cabecera de LOGB que venia despues. 160 deja 33
-// bytes de margen y cuesta 33 bytes de RAM, con ~1,1 kB libres.
-#define OUT_BUFFER_SIZE 160
-char buf[OUT_BUFFER_SIZE];
-lightOStream out(buf, sizeof(buf));
-
-void displayDateVec(byte *dateVec, bool showTimezone=true);
-void displayUnixTime(unsigned long uTime, bool showTimezone=true);
-unsigned long readULong(char *str, int base=10);
-
-#define HDC1080_ADDR 0x40
-
-// TMP119 ultra-high accuracy temperature sensor (U24). ADD0 is tied to GND on
-// this board, which selects address 0x48.
-#define TMP119_ADDR 0x48
-#define TMP119_TEMP_REG   0x00
-#define TMP119_CONFIG_REG 0x01
-// Config register: MOD[11:10]=01 shutdown, AVG[6:5]=01 -> 8 averaged conversions.
-// The sensor is parked here between readings: 0.15uA typ, versus ~16uA if it is
-// left free-running in the continuous conversion mode it boots into.
+// The build signature below detects the change: on the first start-up after it
+// the logger prints a warning, lights the red LED and REFUSES TO LOG.
 //
-// The field layout is easy to miss a bit in, so for reference:
-//     15..12  alert flags and EEPROM_Busy
-//     11..10  MOD    00 continuous, 01 shutdown, 11 one-shot
-//      9..7   CONV   conversion cycle time, continuous mode only
-//      6..5   AVG    00 none, 01 x8, 10 x32, 11 x64
+// TO RECOVER THE OLD DATA, re-flash the firmware that wrote it -- the same
+// channel switches it was built with -- and dump the log with that. Only then
+// clear the log with RC and go back to the new build.
 //
-// This was 0x0220 until 2026-08-22, which sets bit 9 and bit 5 -- CONV=100 and
-// AVG=01, with MOD left at 00. It did not shut the sensor down at all: it put
-// it into CONTINUOUS conversion on a one-second cycle. MOD=01 is bit 10, so the
-// correct word is 0x0420.
-//
-// The error stayed hidden because a one-shot conversion returns the part to
-// shutdown by itself, so the only exposure here was between setup() calling
-// tmp119Sleep() and the first measurement -- up to one measurement interval of
-// ~16uA. It was found on the bench with the power-test firmware, where the same
-// call was made after every reading and cost 16uA permanently.
-#define TMP119_SHUTDOWN   0x0420
+// If the old data is not wanted, RC on its own is enough. Note that RC does not
+// erase the flash, it only resets the sample counter, so the old records
+// physically survive until new ones overwrite them. That is a thin second
+// chance, not a plan: the first sector erase of the new run destroys the start
+// of the old log.
+// --------------------------------------------------------------------------
+
+//==============================================================================
+//==  2.1  BATERIA (tension de la pila, divisor R13/R12 en A6)
+//==============================================================================
+#define LOG_VOLTAGE   1   // battery cell voltage, mV, via the R13/R12 divider on A6
+
+// Battery thresholds in MILLIVOLTS for the single AAA alkaline cell.
+// Typical terminal voltage at low drain and ~21 degC (see voltageToCapacity()):
+//     25% remaining ....... ~1190 mV
+//     10% remaining ....... ~1060 mV
+//      5% remaining ....... ~1000 mV
+//      0% (boost converter can no longer hold 3.3V) ... ~900 mV
+// Both are currently 0, which disables the warnings and also disables the
+// LOW_VOLTAGE_INTERVAL_MULTIPLIER slow-down below. Set LOW_VOLTAGE to about
+// 1190 and CRITICAL_VOLTAGE to about 1000 to turn them on.
+#define LOW_VOLTAGE 0      // e.g. 1190 mV (~25% left) -> start stretching the interval
+#define CRITICAL_VOLTAGE 0 // e.g. 1000 mV (~5% left)
+
+//==============================================================================
+//==  2.2  HDC1080 -- temperatura y humedad relativa (I2C 0x40)
+//==============================================================================
+#define LOG_HDC_TEMP  1   // HDC1080 temperature, centi°C
+#define LOG_HDC_RH    1   // HDC1080 relative humidity, deci %
+
+//==============================================================================
+//==  2.3  TMP119 -- temperatura de alta exactitud (I2C 0x48)
+//==============================================================================
+#define LOG_TMP119    1   // TMP119 high accuracy temperature, centi°C
 
 //-------------------- Conversion mode and averaging ---------------------------
 // The value written to TMP119_CONFIG_REG sets two fields:
@@ -176,122 +137,110 @@ unsigned long readULong(char *str, int base=10);
 // Suggested values: 100 for no averaging, 250 for 8, 800 for 32, 1500 for 64.
 #define TMP119_CONV_TIMEOUT 250 // ms, matches the 8-average setting above
 
-// GlacierLapse v04
-// LEFT SIDE
-// RESET (pin 22)
-// SERIAL RX (pin 0)
-// SERIAL TX (pin 1)
-#define WAKEUP_PIN 2 //Pin used to trigger the interrupt to wake up controlled by the RTC
-#define ONE_WIRE_PIN 3 // 1-Wire header, DS18B20. Needs an external 4.7k pull-up to 3.3V
-// #define UNUSED 4
-// #define UNUSED PIN_PB6 //PIN_PB6 equivalent to 20
-// #define UNUSED PIN_PB7 //PIN_PB7 equivalent to 21
-#define GREEN_LED 5
-#define FLASH_MEMORY_CS 6 
-#define BLUETOOTH_SATUS_PIN 7 
-#define SOFTWARE_SERIAL_RX 8 
+//==============================================================================
+//==  2.4  DS18B20 -- sondas de temperatura 1-Wire en D3
+//==============================================================================
+#define LOG_DS18B20   0   // NUMBER of DS18B20 sensors on the D3 1-Wire bus. Parametros en este bloque.
 
-//RIGHT SIDE
-// A5 SCL
-// A4 SDA
-#define BATT_VOLTAGE_PIN A6
-// A0..A3 are the four pins of expansion header H1 (H1-1..H1-4). They are held
-// as grounded inputs unless LOG_A0..LOG_A3 enable them; see powerManagementSetup().
-#define MEM_POWER 4 // PD4. Powers ONLY the W25Q64 flash, not the sensors
-// SPI interfae
-//#define SCK 13
-//#define MISO 12
-//#define MOSI 11
-#define LED_PIN 10 // RED led (the green one is GREEN_LED, pin 5)
-#define SOFTWARE_SERIAL_TX 9 // Data from GPS to the microcontroller, corresponding to TX pin on the GPS board
-
-// #define UNUSED A7
-
-
-
-//********************************************************************
-//***************** MAIN CONFIGURATION PARAMETERS ********************
-//********************************************************************
-
-
-#define GPS_INSTALLED 0
-#define IRIDIUM_INSTALLED 0
-#define LONG_MASSEGES 1
-
-// Now we define functions calls depending on whether the different hardware components are installed or not
-// functions that are left undefined will be simply removed by the precompiler
-#if GPS_INSTALLED == 1
-  #define timeUpdateCall() gpsUpdate()
-#else
-  #if IRIDIUM_INSTALLED == 1
-    #define timeUpdateCall() iridiumPosUpdate()
-  #else
-    #define timeUpdateCall() noIridiumOrGpsInstalled()
-  #endif
-  
-#endif
-
-#if IRIDIUM_INSTALLED == 1
-  #define iridiumSendMessageCall() iridiumSendMessage()
-#else
-  #define iridiumSendMessageCall() iridiumNotInstalled()
-#endif
-
-
-#if GPS_INSTALLED == 1 || IRIDIUM_INSTALLED == 1
-  #include <AltSoftSerial.h>
-  AltSoftSerial SoftSerial; // Creating softwate serial port to communicate with GPS or Iridium RockBLOCK
-  #define serialTunnelCall() serialTunnel()
-#else
-  #define serialTunnelCall() noIridiumOrGpsInstalled()
-#endif
-
-
-//********************************************************************
-//****************** LOGGED CHANNEL SELECTION ************************
-//********************************************************************
-// Each channel below is included in the record, in the console output and in
-// the LOG/LOGC dumps only when its switch is 1. A channel switched off costs
-// nothing at all: the compiler removes its measurement code, its two bytes in
-// the record and its column in the dump.
+// LOG_DS18B20 is a COUNT, not a flag: 0 for none, 1 for a single sensor, N for
+// N sensors sharing the D3 1-Wire bus. Each one adds its own column to the log
+// and its own two bytes to the record. The bus needs an external 4.7k pull-up
+// to 3.3 V; there is no internal pull-up strong enough.
 //
-// ------------------------- READ THIS FIRST --------------------------------
-// CHANGING ANY OF THESE SWITCHES CHANGES THE RECORD LAYOUT, and records written
-// before the change CANNOT BE READ by a firmware built after it. LOG and LOGC
-// step through the log at this build's BYTES_PER_SAMPLE and read each field at
-// this build's offsets, so a changed record size misaligns every record after
-// the first, and a changed field order misreads the fields inside it. The dump
-// still looks like a neat table, which is exactly what makes it dangerous.
+// HOW MULTIPLE SENSORS ARE KEPT APART. Every DS18B20 carries a unique 64-bit
+// ROM code burned in at the factory. At start-up the bus is enumerated, the
+// codes are sorted by serial number, and slot 0 is bound to the lowest, slot 1
+// to the next, and so on. Readings are then addressed to a specific ROM code
+// rather than broadcast, which buys two things:
+//   - the column order is fixed by the hardware and is identical on every
+//     power-up, whatever order the sensors happen to answer the search in;
+//   - a sensor that stops responding leaves NaN in ITS OWN column and does not
+//     shift everybody else's readings one column to the left.
+// Each column is headed DS-xxxx, xxxx being the bottom four hex digits of that
+// sensor's serial number, so a column can always be traced to the physical
+// part. The full list is printed at start-up and by the I command.
 //
-// The build signature below detects the change: on the first start-up after it
-// the logger prints a warning, lights the red LED and REFUSES TO LOG.
+// If fewer sensors answer than LOG_DS18B20 expects, the logger says so and
+// lights the red LED but carries on, logging NaN in the unbound slots. That is
+// deliberate: in the field a broken probe should cost one column, not the whole
+// record.
 //
-// TO RECOVER THE OLD DATA, re-flash the firmware that wrote it -- the same
-// channel switches it was built with -- and dump the log with that. Only then
-// clear the log with RC and go back to the new build.
+// All sensors are converted SIMULTANEOUSLY by one broadcast command, so the
+// conversion wait below is paid once however many are fitted. Only the
+// scratchpad reads are per sensor, and those cost roughly 5 ms each.
 //
-// If the old data is not wanted, RC on its own is enough. Note that RC does not
-// erase the flash, it only resets the sample counter, so the old records
-// physically survive until new ones overwrite them. That is a thin second
-// chance, not a plan: the first sector erase of the new run destroys the start
-// of the old log.
-// --------------------------------------------------------------------------
+// The conversion time is charged to the awake window, i.e. straight to the
+// battery, and at the top setting it is longer than a whole short measurement
+// interval. The sensor is polled rather than blindly delayed, so a faster
+// setting really does return sooner.
+//
+//   DS18B20_RESOLUTION   step        conversion   comment
+//         9            0.5    °C       93.75 ms   fine as a second probe
+//        10            0.25   °C      187.5  ms
+//        11            0.125  °C      375    ms
+//        12            0.0625 °C      750    ms   longer than a 1 s interval
+//
+// The TMP119 already resolves 0.0078 °C, so this part is normally a remote or
+// second-point probe where the lower settings are perfectly adequate.
+//
+// Idle current is about 1 uA per sensor on the permanent 3.3 V rail. Against a
+// 6 uA sleep budget that is not nothing, and it multiplies by the number fitted;
+// a board that cares should feed the bus from a GPIO.
+#define DS18B20_RESOLUTION 12
 
-#define LOG_VOLTAGE   1   // battery cell voltage, mV, via the R13/R12 divider on A6
-#define LOG_HDC_TEMP  1   // HDC1080 temperature, centi°C
-#define LOG_HDC_RH    1   // HDC1080 relative humidity, deci %
-#define LOG_TMP119    1   // TMP119 high accuracy temperature, centi°C
-#define LOG_DS18B20   0   // NUMBER of DS18B20 sensors on the D3 1-Wire bus. See below.
-#define LOG_HCSR04    0   // HC-SR04P ultrasonic distance ("Dist"), cm, on the four H1 pins. See below.
+// Upper limit on LOG_DS18B20. Three bits are reserved for the count in the log
+// signature, which is what lets a change from three sensors to five register as
+// a layout change instead of silently corrupting the log. Eight is also about
+// as many as a 4.7k pull-up will drive reliably down a field cable, and costs
+// 16 bytes of record and 80 bytes of RAM.
+#define MAX_DS18B20 8
 
-// CONT ON / CONT ON+H / CONT OFF: continuous capture for vertical profiles from
-// a drone (Continuous.ino). About 2 kB of program. With the compiler's LTO on
-// (MiniCore's default) and the I2C timeout, even TMP119 + A0 switched from
-// A1+A2+A3 + CONT fits: 30.908 B, 95 %. Set to 0 only to free that space.
-// Reading a CONT log (LOGB, INFO) works either way.
-#define CONT_CAPTURE  1
+//==============================================================================
+//==  2.5  HC-SR04P -- distancia por ultrasonido en el header H1
+//==============================================================================
+#define LOG_HCSR04    0   // HC-SR04P ultrasonic distance ("Dist"), cm, on the four H1 pins. Parametros en este bloque.
 
-//---------------------- EXPANSION HEADER H1, A0..A3 -------------------------
+// The 3.3 V variant (HC-SR04P, 3-5.5 V). The classic HC-SR04 needs 5 V and does
+// not range reliably on this board's 3.3 V.
+//
+// It takes the WHOLE expansion header, so LOG_A0..LOG_A3 must be 0 with it:
+//   H1-1 = A0   echo    (input while measuring)
+//   H1-2 = A1   trigger (output)
+//   H1-3 = A2 \ VCC: both switched on together, as for PIN_POWER, so the sensor
+//   H1-4 = A3 /       draws nothing while the logger sleeps (~15 mA when ranging)
+// D3 is NOT used on purpose: a board fitted for 1-Wire has a 4.7k pull-up there,
+// and with the sensor switched off that pull-up would feed it through its trigger
+// input, about half a milliamp for ever. While the logger sleeps the trigger and
+// the echo are held LOW, for the same reason.
+//
+// Each measurement fires HCSR04_PINGS pings HCSR04_PING_GAP_MS apart and keeps
+// the median of the ones that came back, so a stray echo does not make it into
+// the log. The time of flight is converted with the speed of sound at the air
+// temperature just measured (TMP119 if logged, else HDC1080): 331.3 + 0.606*T
+// m/s. Without that, -10 C against 20 C is a 5 % error, 10 cm at 2 m. One of the
+// two temperature channels must therefore be logged.
+//
+// Stored as an int, in cm. A ping that never returns (nothing within ~5 m, or a
+// target that scatters the sound away) does not count; if fewer than
+// HCSR04_MIN_VALID came back the record holds NaN and ERR_HCSR04 is noted.
+// (echo A0 = PC0 and trigger A1 = PC1 are used by port bit in HCSR04.ino)
+#define HCSR04_POWER      (PIN_POWER_A2|PIN_POWER_A3)
+// Power-on to first ping. Measured on the bench (2026-11-08, at 8 and 150 cm):
+// the sensor answers right from ~650 ms after power-on, at both distances.
+// Before that it mostly does not answer, and the echoes that do come back are
+// FALSE (e.g. 2276 3127 3674 3197 us = 55 cm with the target at 8 cm), and
+// enough of them pass the median. 800 = that threshold plus 20 %, for the cold.
+// Do not lower it.
+#define HCSR04_SETTLE_MS  800
+#define HCSR04_PINGS      5
+#define HCSR04_MIN_VALID  3
+#define HCSR04_PING_GAP_MS 60   // lets the previous ping's echoes die out
+#define HCSR04_TIMEOUT_US 30000UL  // ~5 m there and back
+
+//==============================================================================
+//==  2.6  HEADER H1 (A0..A3) -- entradas analogicas y alimentacion conmutada (PIN_POWER)
+//    Con LOG_HCSR04 1 el sensor de ultrasonido ocupa todo H1: LOG_A0..LOG_A3 en 0.
+//==============================================================================
 // Four general purpose analog inputs on header H1 (H1-1=A0 .. H1-4=A3). Each
 // enabled pin is sampled, converted to millivolts through its own two-point
 // calibration (commands A01/A02 for A0, A11/A12 for A1, and so on, stored in
@@ -418,44 +367,60 @@ unsigned long readULong(char *str, int base=10);
 #define A2_SETTLE_MS  0
 #define A3_SETTLE_MS  0
 
-//------------------- HC-SR04P ULTRASONIC DISTANCE ON H1 ----------------------
-// The 3.3 V variant (HC-SR04P, 3-5.5 V). The classic HC-SR04 needs 5 V and does
-// not range reliably on this board's 3.3 V.
-//
-// It takes the WHOLE expansion header, so LOG_A0..LOG_A3 must be 0 with it:
-//   H1-1 = A0   echo    (input while measuring)
-//   H1-2 = A1   trigger (output)
-//   H1-3 = A2 \ VCC: both switched on together, as for PIN_POWER, so the sensor
-//   H1-4 = A3 /       draws nothing while the logger sleeps (~15 mA when ranging)
-// D3 is NOT used on purpose: a board fitted for 1-Wire has a 4.7k pull-up there,
-// and with the sensor switched off that pull-up would feed it through its trigger
-// input, about half a milliamp for ever. While the logger sleeps the trigger and
-// the echo are held LOW, for the same reason.
-//
-// Each measurement fires HCSR04_PINGS pings HCSR04_PING_GAP_MS apart and keeps
-// the median of the ones that came back, so a stray echo does not make it into
-// the log. The time of flight is converted with the speed of sound at the air
-// temperature just measured (TMP119 if logged, else HDC1080): 331.3 + 0.606*T
-// m/s. Without that, -10 C against 20 C is a 5 % error, 10 cm at 2 m. One of the
-// two temperature channels must therefore be logged.
-//
-// Stored as an int, in cm. A ping that never returns (nothing within ~5 m, or a
-// target that scatters the sound away) does not count; if fewer than
-// HCSR04_MIN_VALID came back the record holds NaN and ERR_HCSR04 is noted.
-// (echo A0 = PC0 and trigger A1 = PC1 are used by port bit in HCSR04.ino)
-#define HCSR04_POWER      (PIN_POWER_A2|PIN_POWER_A3)
-// Power-on to first ping. Measured on the bench (2026-11-08, at 8 and 150 cm):
-// the sensor answers right from ~650 ms after power-on, at both distances.
-// Before that it mostly does not answer, and the echoes that do come back are
-// FALSE (e.g. 2276 3127 3674 3197 us = 55 cm with the target at 8 cm), and
-// enough of them pass the median. 800 = that threshold plus 20 %, for the cold.
-// Do not lower it.
-#define HCSR04_SETTLE_MS  800
-#define HCSR04_PINGS      5
-#define HCSR04_MIN_VALID  3
-#define HCSR04_PING_GAP_MS 60   // lets the previous ping's echoes die out
-#define HCSR04_TIMEOUT_US 30000UL  // ~5 m there and back
+//==============================================================================
+//==  2.7  CAPTURA CONTINUA (CONT)
+//==============================================================================
+// CONT ON / CONT ON+H / CONT OFF: continuous capture for vertical profiles from
+// a drone (Continuous.ino). About 2 kB of program. With the compiler's LTO on
+// (MiniCore's default) and the I2C timeout, even TMP119 + A0 switched from
+// A1+A2+A3 + CONT fits: 30.908 B, 95 %. Set to 0 only to free that space.
+// Reading a CONT log (LOGB, INFO) works either way.
+#define CONT_CAPTURE  1
 
+//==============================================================================
+//==  2.8  GPS E IRIDIUM
+//==============================================================================
+#define GPS_INSTALLED 0
+#define IRIDIUM_INSTALLED 0
+#define LONG_MASSEGES 1
+
+//==============================================================================
+//==  2.9  AJUSTES AVANZADOS (rara vez se cambian)
+//==============================================================================
+// Set to 0 to make a layout mismatch a warning only, and keep appending records
+// to a log that a single reader can no longer parse. Suspending is the default
+// because the mismatch can only appear on the first run after a reflash, which
+// is a bench operation, whereas a silently mixed log is discovered months later.
+#define SUSPEND_ON_FORMAT_MISMATCH 1
+
+// Set to 1 to print the exact hardware state immediately before power-down.
+// The implementation is in Power.ino; this switch has to be here because the
+// IDE appends the other tabs after this file. Costs nothing while it is 0.
+#define POWER_DEBUG 0
+// FLASH POWER STRATEGY DURING SLEEP
+// 0 = cut MEM_POWER (what this firmware did until 2026-08-22)
+// 1 = leave the supply on and rely on the 0xB9 deep power-down command
+//
+// MEASURED on rev02, in series with the AAA cell: 0 gives 190uA of sleep
+// current, 1 gives 110uA. Cutting the supply is the expensive option here,
+// because a chip with no VCC has to be defended against its own I/O pins --
+// every line into it must be held low or current flows in through the
+// protection diodes and parasitically powers it. CS in particular then fights
+// R26, a 47k pull-up to the permanent 3.3V rail, for 3.3V/47k = 70uA of pure
+// loss. Left powered, the chip sits in deep power-down at ~1uA, CS rests high
+// with both ends of R26 at the same potential, and nothing needs defending.
+// It also stops power-cycling a flash that has no decoupling capacitor.
+//
+// The board-level fix is the one in the pending notes of section 4: tie the flash
+// VCC straight to 3.3V and drop the GPIO switching entirely.
+#define SLEEP_FLASH_POWERED 1
+
+//##############################################################################
+//##  3. DERIVADO DE LA CONFIGURACION Y COMPROBACIONES
+//##  Nada de esta seccion se edita: sale de los interruptores de la seccion 2.
+//##############################################################################
+
+// HC-SR04P: combinaciones que no pueden funcionar (ver 2.5).
 #if LOG_HCSR04 && (LOG_A0 || LOG_A1 || LOG_A2 || LOG_A3)
   #error "LOG_HCSR04 uses all of H1 (A0 echo, A1 trigger, A2+A3 power): set LOG_A0..LOG_A3 to 0"
 #endif
@@ -535,60 +500,6 @@ unsigned long readULong(char *str, int base=10);
 #if PIN_POWER_MASK && defined(PIN_A0) && PIN_A0 != 14
   #error "PIN_POWER assumes A0..A3 are PC0..PC3 (PIN_A0 == 14)"
 #endif
-
-//----------------------------- DS18B20 on D3 --------------------------------
-// LOG_DS18B20 is a COUNT, not a flag: 0 for none, 1 for a single sensor, N for
-// N sensors sharing the D3 1-Wire bus. Each one adds its own column to the log
-// and its own two bytes to the record. The bus needs an external 4.7k pull-up
-// to 3.3 V; there is no internal pull-up strong enough.
-//
-// HOW MULTIPLE SENSORS ARE KEPT APART. Every DS18B20 carries a unique 64-bit
-// ROM code burned in at the factory. At start-up the bus is enumerated, the
-// codes are sorted by serial number, and slot 0 is bound to the lowest, slot 1
-// to the next, and so on. Readings are then addressed to a specific ROM code
-// rather than broadcast, which buys two things:
-//   - the column order is fixed by the hardware and is identical on every
-//     power-up, whatever order the sensors happen to answer the search in;
-//   - a sensor that stops responding leaves NaN in ITS OWN column and does not
-//     shift everybody else's readings one column to the left.
-// Each column is headed DS-xxxx, xxxx being the bottom four hex digits of that
-// sensor's serial number, so a column can always be traced to the physical
-// part. The full list is printed at start-up and by the I command.
-//
-// If fewer sensors answer than LOG_DS18B20 expects, the logger says so and
-// lights the red LED but carries on, logging NaN in the unbound slots. That is
-// deliberate: in the field a broken probe should cost one column, not the whole
-// record.
-//
-// All sensors are converted SIMULTANEOUSLY by one broadcast command, so the
-// conversion wait below is paid once however many are fitted. Only the
-// scratchpad reads are per sensor, and those cost roughly 5 ms each.
-//
-// The conversion time is charged to the awake window, i.e. straight to the
-// battery, and at the top setting it is longer than a whole short measurement
-// interval. The sensor is polled rather than blindly delayed, so a faster
-// setting really does return sooner.
-//
-//   DS18B20_RESOLUTION   step        conversion   comment
-//         9            0.5    °C       93.75 ms   fine as a second probe
-//        10            0.25   °C      187.5  ms
-//        11            0.125  °C      375    ms
-//        12            0.0625 °C      750    ms   longer than a 1 s interval
-//
-// The TMP119 already resolves 0.0078 °C, so this part is normally a remote or
-// second-point probe where the lower settings are perfectly adequate.
-//
-// Idle current is about 1 uA per sensor on the permanent 3.3 V rail. Against a
-// 6 uA sleep budget that is not nothing, and it multiplies by the number fitted;
-// a board that cares should feed the bus from a GPIO.
-#define DS18B20_RESOLUTION 12
-
-// Upper limit on LOG_DS18B20. Three bits are reserved for the count in the log
-// signature, which is what lets a change from three sensors to five register as
-// a layout change instead of silently corrupting the log. Eight is also about
-// as many as a 4.7k pull-up will drive reliably down a field cable, and costs
-// 16 bytes of record and 80 bytes of RAM.
-#define MAX_DS18B20 8
 
 //--------------------- DERIVED: record layout and signature -----------------
 // Nothing below here is meant to be edited.
@@ -688,18 +599,219 @@ unsigned long readULong(char *str, int base=10);
 #define LOG_SIGNATURE_CONT ((uint16_t)((LOG_SIGNATURE & 0x0FFF) | ((uint16_t)LOG_FORMAT_CONT<<12)))
 #define BYTES_PER_SAMPLE_CONT (BYTES_PER_SAMPLE + CONT_MS_BYTES)
 
-// Set to 0 to make a layout mismatch a warning only, and keep appending records
-// to a log that a single reader can no longer parse. Suspending is the default
-// because the mismatch can only appear on the first run after a reflash, which
-// is a bench operation, whereas a silently mixed log is discovered months later.
-#define SUSPEND_ON_FORMAT_MISMATCH 1
-
 #if BYTES_PER_SAMPLE < 6
   #error "No channel enabled: the record would hold nothing but a timestamp."
 #endif
 #if LOG_DS18B20 > MAX_DS18B20
   #error "LOG_DS18B20 exceeds MAX_DS18B20: only three bits are reserved for the count in the log signature."
 #endif
+
+//##############################################################################
+//##  4. HARDWARE DE LA PLACA
+//##############################################################################
+
+// ===========================================================================
+// REQUIRED BOARD SETTINGS (Tools menu / FQBN)
+//   Board .......... MiniCore -> ATmega328
+//   Variant ........ 328P / 328PA
+//   Clock .......... External 7.3728 MHz     <-- NOT 8 MHz, and NOT 16 MHz
+//   BOD ............ 2.7V
+//   Bootloader ..... Yes (UART0)
+//
+// The 7.3728 MHz crystal is not an arbitrary choice: it divides exactly to the
+// standard rates. With F_CPU 7372800 the core computes UBRR=7 for 115200 and
+// UBRR=3 for 230400, both in double-speed mode and both with ZERO error. That
+// is the whole reason this part is fitted instead of a round 8 MHz one -- at
+// 8 MHz the closest the hardware can get to 230400 is 250000, an 8.5% error,
+// which no receiver will decode.
+//
+// The console runs at 115200 (see BAUDRATE): that is the ceiling of the HM-10
+// bluetooth modules, and it is also what the MiniCore bootloader uses for this
+// clock, so upload, console and bluetooth all speak the same rate. The binary
+// dump can borrow 230400 for its duration over cable -- see dumpLogBinary.
+//
+// Getting the clock wrong does not fail to build and does not fail to upload;
+// it silently changes the baud rate on the wire, and the console fills with
+// rubbish at what looks like the right setting. Building this sketch for
+// 16 MHz puts 102400 baud on the wire; for 8 MHz the UART survives by
+// coincidence (same UBRR) but every delay() and millis() runs 8.5% fast.
+// Arduino IDE 2.x remembers the board selection PER SKETCH, so setting it on
+// the main firmware does not set it here, or the other way round.
+// ===========================================================================
+
+/*
+  GlacierTemp 1-cell rev02 -- board pinout (U19 = ATMEGA328P-MU, VQFN-32).
+  Package pin numbers run counter-clockwise from the pin-1 dot at the top-left.
+  D##/A## are the Arduino / MiniCore names; PB6 and PB7 carry the crystal and
+  are NOT usable as I/O with an external oscillator selected.
+
+                          WAKEUP    TX      RX    RESET    SCL     SDA     H1-4    H1-3
+                            D2      D1      D0     RST      A5      A4      A3      A2
+                           PD2     PD1     PD0     PC6     PC5     PC4     PC3     PC2
+                            32      31      30      29      28      27      26      25
+                        +----------------------------------------------------------------+
+    1-Wire hdr  PD3  D3 | 1                                                            24| PC1  A1  H1-2
+    FLASH VCC   PD4  D4 | 2                                                            23| PC0  A0  H1-1
+                GND     | 3                        ATMEGA328P-MU                       22| ADC7 A7  n/c
+    3.3V        VCC     | 4                             VQFN-32                        21| GND
+                GND     | 5                                U19                         20| AREF     n/c
+    3.3V        VCC     | 6                                                            19| ADC6 A6  Vbatt/6
+    XTAL1       PB6  D20| 7                                                            18| AVCC     3.3V
+    XTAL2       PB7  D21| 8                                                            17| PB5  D13 SCK
+                        +----------------------------------------------------------------+
+                            9       10      11      12      13      14      15      16
+                           PD5     PD6     PD7     PB0     PB1     PB2     PB3     PB4
+                            D5      D6      D7      D8      D9     D10     D11     D12
+                         GRN_LED FLSH_CS BT_STAT  SS_RX   SS_TX  RED_LED   MOSI    MISO
+
+  Legend for the abbreviated signal names:
+    WAKEUP   RTC DS3231 INT/SQW alarm output, wakes the MCU from power-down
+    TX / RX  console UART, shared by the FTDI header and the HM-10 bluetooth
+    SCL/SDA  I2C bus: DS3231 RTC 0x68, HDC1080 0x40, TMP119 0x48
+    H1-1..4  4-pin expansion header H1 (A0..A3)
+    GRN_LED  green LED, lit on a successful measurement and after a reset
+    RED_LED  red LED, lit if a start-up test fails, flashed if a write fails
+    FLSH_CS  W25Q64 flash chip select (has a 47k pull-up to 3.3V, R26)
+    BT_STAT  HM-10 bluetooth connection status input
+    SS_RX/TX AltSoftSerial pins, only used when a GPS or Iridium modem is fitted
+    MOSI/MISO/SCK  SPI to the W25Q64 flash and to the ICSP header
+    FLASH VCC      MEM_POWER: this pin is the flash chip's ONLY supply. Neither
+                   temperature sensor is powered from it; both sit on 3.3V.
+    Vbatt/6        raw cell voltage through the R13/R12 = 10M/2M divider
+
+  CODE SIZE NOTE: the default build uses NO floating point. The soft-float
+  library cost ~1.5 kB and was pulled in by getTempAndRH(), twoPointMv(),
+  runningDays(), readFloat()/updateVar() and setRefVoltage(); since 3.6 they are
+  all integer arithmetic, verified against the float versions (and more exact).
+  A single float anywhere brings the whole library back: check with
+  avr-nm on the .elf that no __addsf3/__mulsf3/__divsf3 symbol appears.
+  Only the GPS and Iridium code still uses float. strtoul() was replaced by
+  readUL() for the same reason (~470 bytes). LTO is already on by default in
+  MiniCore (Tools > Compiler LTO); turning it off costs ~2 kB.
+*/
+
+// ---- Pendientes de hardware y de software ----
+// Que los comandos respondan tanto comandos terminados en /n como /r/n o /r o sin terminacion
+// Que la app permita enviar comandos aunque la placa no responda como es esperado
+
+
+// Alejar la traza del borde en la parte inferior
+// En el chip de memoria poner pins 7 y 3 con un pull-up the 10 kOhm a VCC (pin 3 flotante consumia 84 uA), y alimentar el chip directo de VCC (no hace falta alimentarlo con un pin IO)
+// Add decoupling capacitor to the flash. From MEM_POWER Add a 100 nF (plus ~1–4.7 µF) next to the chip
+// Order the non-quad variant of the memory chip (ordering option IG/IF), where QE defaults to 0 and /WP and /HOLD are real pins. For dos variants it is OK to tie pins 3 and 7 dirctly to VCC but a resistor is still recommended.
+
+// GlacierLapse v04
+// LEFT SIDE
+// RESET (pin 22)
+// SERIAL RX (pin 0)
+// SERIAL TX (pin 1)
+#define WAKEUP_PIN 2 //Pin used to trigger the interrupt to wake up controlled by the RTC
+#define ONE_WIRE_PIN 3 // 1-Wire header, DS18B20. Needs an external 4.7k pull-up to 3.3V
+// #define UNUSED 4
+// #define UNUSED PIN_PB6 //PIN_PB6 equivalent to 20
+// #define UNUSED PIN_PB7 //PIN_PB7 equivalent to 21
+#define GREEN_LED 5
+#define FLASH_MEMORY_CS 6 
+#define BLUETOOTH_SATUS_PIN 7 
+#define SOFTWARE_SERIAL_RX 8 
+
+//RIGHT SIDE
+// A5 SCL
+// A4 SDA
+#define BATT_VOLTAGE_PIN A6
+// A0..A3 are the four pins of expansion header H1 (H1-1..H1-4). They are held
+// as grounded inputs unless LOG_A0..LOG_A3 enable them; see powerManagementSetup().
+#define MEM_POWER 4 // PD4. Powers ONLY the W25Q64 flash, not the sensors
+// SPI interfae
+//#define SCK 13
+//#define MISO 12
+//#define MOSI 11
+#define LED_PIN 10 // RED led (the green one is GREEN_LED, pin 5)
+#define SOFTWARE_SERIAL_TX 9 // Data from GPS to the microcontroller, corresponding to TX pin on the GPS board
+
+// #define UNUSED A7
+
+// ---- Sensores I2C: direcciones y registros ----
+#define HDC1080_ADDR 0x40
+
+// TMP119 ultra-high accuracy temperature sensor (U24). ADD0 is tied to GND on
+// this board, which selects address 0x48.
+#define TMP119_ADDR 0x48
+#define TMP119_TEMP_REG   0x00
+#define TMP119_CONFIG_REG 0x01
+// Config register: MOD[11:10]=01 shutdown, AVG[6:5]=01 -> 8 averaged conversions.
+// The sensor is parked here between readings: 0.15uA typ, versus ~16uA if it is
+// left free-running in the continuous conversion mode it boots into.
+//
+// The field layout is easy to miss a bit in, so for reference:
+//     15..12  alert flags and EEPROM_Busy
+//     11..10  MOD    00 continuous, 01 shutdown, 11 one-shot
+//      9..7   CONV   conversion cycle time, continuous mode only
+//      6..5   AVG    00 none, 01 x8, 10 x32, 11 x64
+//
+// This was 0x0220 until 2026-08-22, which sets bit 9 and bit 5 -- CONV=100 and
+// AVG=01, with MOD left at 00. It did not shut the sensor down at all: it put
+// it into CONTINUOUS conversion on a one-second cycle. MOD=01 is bit 10, so the
+// correct word is 0x0420.
+//
+// The error stayed hidden because a one-shot conversion returns the part to
+// shutdown by itself, so the only exposure here was between setup() calling
+// tmp119Sleep() and the first measurement -- up to one measurement interval of
+// ~16uA. It was found on the bench with the power-test firmware, where the same
+// call was made after every reading and cost 16uA permanently.
+#define TMP119_SHUTDOWN   0x0420
+
+//##############################################################################
+//##  5. MEMORIA EEPROM, VARIABLES GLOBALES Y RESTO DEL PROGRAMA
+//##############################################################################
+
+#include "./lightOStream.h"
+// Buffer de UNA linea. Es un limite duro y silencioso: la linea solo se emite cuando el
+// stream recibe el '\n', y si el buffer se llena antes, ese '\n' no cabe, la linea no se
+// vacia nunca y ARRASTRA a las siguientes hasta que algo la limpie. No se pierde una linea:
+// se pierden todas las que vengan detras.
+//
+// Con 127 cabian 126 caracteres contando el salto, y la cabecera INFO ya ocupaba 123. El
+// identificador corto con formato "GT001-XXXXXX" le sumo cuatro y la dejo justo un byte por
+// encima, llevandose por delante tambien la cabecera de LOGB que venia despues. 160 deja 33
+// bytes de margen y cuesta 33 bytes de RAM, con ~1,1 kB libres.
+#define OUT_BUFFER_SIZE 160
+char buf[OUT_BUFFER_SIZE];
+lightOStream out(buf, sizeof(buf));
+
+void displayDateVec(byte *dateVec, bool showTimezone=true);
+void displayUnixTime(unsigned long uTime, bool showTimezone=true);
+unsigned long readULong(char *str, int base=10);
+
+// Llamadas que dependen de si hay GPS o Iridium (ver 2.8)
+// Now we define functions calls depending on whether the different hardware components are installed or not
+// functions that are left undefined will be simply removed by the precompiler
+#if GPS_INSTALLED == 1
+  #define timeUpdateCall() gpsUpdate()
+#else
+  #if IRIDIUM_INSTALLED == 1
+    #define timeUpdateCall() iridiumPosUpdate()
+  #else
+    #define timeUpdateCall() noIridiumOrGpsInstalled()
+  #endif
+  
+#endif
+
+#if IRIDIUM_INSTALLED == 1
+  #define iridiumSendMessageCall() iridiumSendMessage()
+#else
+  #define iridiumSendMessageCall() iridiumNotInstalled()
+#endif
+
+
+#if GPS_INSTALLED == 1 || IRIDIUM_INSTALLED == 1
+  #include <AltSoftSerial.h>
+  AltSoftSerial SoftSerial; // Creating softwate serial port to communicate with GPS or Iridium RockBLOCK
+  #define serialTunnelCall() serialTunnel()
+#else
+  #define serialTunnelCall() noIridiumOrGpsInstalled()
+#endif
+
 
 //********************************************************************
 //******************** INTERNAL EEPROM MANAGEMENT ********************
@@ -793,17 +905,6 @@ void(* resetFunc) (void) = 0; //declare reset function @ address 0
 
 #define BATT_SAMPLES 21 // number of samples for battery voltage and solar current measurements
 
-// Battery thresholds in MILLIVOLTS for the single AAA alkaline cell.
-// Typical terminal voltage at low drain and ~21 degC (see voltageToCapacity()):
-//     25% remaining ....... ~1190 mV
-//     10% remaining ....... ~1060 mV
-//      5% remaining ....... ~1000 mV
-//      0% (boost converter can no longer hold 3.3V) ... ~900 mV
-// Both are currently 0, which disables the warnings and also disables the
-// LOW_VOLTAGE_INTERVAL_MULTIPLIER slow-down below. Set LOW_VOLTAGE to about
-// 1190 and CRITICAL_VOLTAGE to about 1000 to turn them on.
-#define LOW_VOLTAGE 0      // e.g. 1190 mV (~25% left) -> start stretching the interval
-#define CRITICAL_VOLTAGE 0 // e.g. 1000 mV (~5% left)
 
 
 //********************************************************************
@@ -965,27 +1066,6 @@ bool logFormatMismatch=false;
 #define STATUS1_BP_MASK 0x3C // S5..S2, TB + BP2..BP0: proteccion del array de memoria
 #define STATUS2_SRP1 0x01    // S8,  Status Register Protect 1 (in SR2)
 
-// Set to 1 to print the exact hardware state immediately before power-down.
-// The implementation is in Power.ino; this switch has to be here because the
-// IDE appends the other tabs after this file. Costs nothing while it is 0.
-#define POWER_DEBUG 0
-// FLASH POWER STRATEGY DURING SLEEP
-// 0 = cut MEM_POWER (what this firmware did until 2026-08-22)
-// 1 = leave the supply on and rely on the 0xB9 deep power-down command
-//
-// MEASURED on rev02, in series with the AAA cell: 0 gives 190uA of sleep
-// current, 1 gives 110uA. Cutting the supply is the expensive option here,
-// because a chip with no VCC has to be defended against its own I/O pins --
-// every line into it must be held low or current flows in through the
-// protection diodes and parasitically powers it. CS in particular then fights
-// R26, a 47k pull-up to the permanent 3.3V rail, for 3.3V/47k = 70uA of pure
-// loss. Left powered, the chip sits in deep power-down at ~1uA, CS rests high
-// with both ends of R26 at the same potential, and nothing needs defending.
-// It also stops power-cycling a flash that has no decoupling capacitor.
-//
-// The board-level fix is the one noted at the top of this file: tie the flash
-// VCC straight to 3.3V and drop the GPIO switching entirely.
-#define SLEEP_FLASH_POWERED 1
 
 #define SECTOR_SIZE 4096UL
 #define MAX_SECTORS 2047UL
@@ -1022,25 +1102,6 @@ bool logFormatMismatch=false;
 #define SLEEP_DELAY 0
 #define WAKEUP_DELAY 0
 
-// Version del firmware y del PROTOCOLO de la consola serie. Son cosas distintas:
-// el firmware cambia con cualquier arreglo, mientras que la version de protocolo
-// solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
-// respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
-// con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.18"
-#define PROTOCOL_VERSION 8
-
-// Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
-// los cinco primeros caracteres del identificador corto de la placa, "GT001-XXXXXX":
-//
-//   BOARD_TYPE        que tipo de placa es (Glacier Temp)
-//   BOARD_HW_VERSION  que REVISION del hardware es, no que firmware corre
-//
-// FIRMWARE_VERSION cambia con cada arreglo; BOARD_HW_VERSION solo cuando cambia la placa
-// fisica. Como son constantes de compilacion, una revision nueva de placa exige su propia
-// compilacion con este numero cambiado.
-#define BOARD_TYPE "GT"
-#define BOARD_HW_VERSION "001"
 
 // ------------------------------------------------------------------------------------------
 // DESCRIPTOR DE LA COMPILACION ("GTFW")
