@@ -282,6 +282,7 @@ unsigned long readULong(char *str, int base=10);
 #define LOG_HDC_RH    1   // HDC1080 relative humidity, deci %
 #define LOG_TMP119    1   // TMP119 high accuracy temperature, centi°C
 #define LOG_DS18B20   0   // NUMBER of DS18B20 sensors on the D3 1-Wire bus. See below.
+#define LOG_HCSR04    0   // HC-SR04P ultrasonic distance ("Dist"), cm, on the four H1 pins. See below.
 
 // CONT ON / CONT ON+H / CONT OFF: continuous capture for vertical profiles from
 // a drone (Continuous.ino). About 2 kB of program. With the compiler's LTO on
@@ -417,10 +418,59 @@ unsigned long readULong(char *str, int base=10);
 #define A2_SETTLE_MS  0
 #define A3_SETTLE_MS  0
 
+//------------------- HC-SR04P ULTRASONIC DISTANCE ON H1 ----------------------
+// The 3.3 V variant (HC-SR04P, 3-5.5 V). The classic HC-SR04 needs 5 V and does
+// not range reliably on this board's 3.3 V.
+//
+// It takes the WHOLE expansion header, so LOG_A0..LOG_A3 must be 0 with it:
+//   H1-1 = A0   echo    (input while measuring)
+//   H1-2 = A1   trigger (output)
+//   H1-3 = A2 \ VCC: both switched on together, as for PIN_POWER, so the sensor
+//   H1-4 = A3 /       draws nothing while the logger sleeps (~15 mA when ranging)
+// D3 is NOT used on purpose: a board fitted for 1-Wire has a 4.7k pull-up there,
+// and with the sensor switched off that pull-up would feed it through its trigger
+// input, about half a milliamp for ever. While the logger sleeps the trigger and
+// the echo are held LOW, for the same reason.
+//
+// Each measurement fires HCSR04_PINGS pings HCSR04_PING_GAP_MS apart and keeps
+// the median of the ones that came back, so a stray echo does not make it into
+// the log. The time of flight is converted with the speed of sound at the air
+// temperature just measured (TMP119 if logged, else HDC1080): 331.3 + 0.606*T
+// m/s. Without that, -10 C against 20 C is a 5 % error, 10 cm at 2 m. One of the
+// two temperature channels must therefore be logged.
+//
+// Stored as an int, in cm. A ping that never returns (nothing within ~5 m, or a
+// target that scatters the sound away) does not count; if fewer than
+// HCSR04_MIN_VALID came back the record holds NaN and ERR_HCSR04 is noted.
+// (echo A0 = PC0 and trigger A1 = PC1 are used by port bit in HCSR04.ino)
+#define HCSR04_POWER      (PIN_POWER_A2|PIN_POWER_A3)
+// Power-on to first ping. Measured on the bench (2026-11-08, at 8 and 150 cm):
+// the sensor answers right from ~650 ms after power-on, at both distances.
+// Before that it mostly does not answer, and the echoes that do come back are
+// FALSE (e.g. 2276 3127 3674 3197 us = 55 cm with the target at 8 cm), and
+// enough of them pass the median. 800 = that threshold plus 20 %, for the cold.
+// Do not lower it.
+#define HCSR04_SETTLE_MS  800
+#define HCSR04_PINGS      5
+#define HCSR04_MIN_VALID  3
+#define HCSR04_PING_GAP_MS 60   // lets the previous ping's echoes die out
+#define HCSR04_TIMEOUT_US 30000UL  // ~5 m there and back
+
+#if LOG_HCSR04 && (LOG_A0 || LOG_A1 || LOG_A2 || LOG_A3)
+  #error "LOG_HCSR04 uses all of H1 (A0 echo, A1 trigger, A2+A3 power): set LOG_A0..LOG_A3 to 0"
+#endif
+#if LOG_HCSR04 && defined(PIN_A0) && PIN_A0 != 14
+  #error "LOG_HCSR04 assumes A0..A3 are PC0..PC3 (PIN_A0 == 14)"
+#endif
+#if LOG_HCSR04 && !LOG_TMP119 && !LOG_HDC_TEMP
+  #error "LOG_HCSR04 needs LOG_TMP119 or LOG_HDC_TEMP: the distance is corrected with the air temperature"
+#endif
+
 // Derived: every pin that powers something, every logged pin, and the longest
 // settle among the channels that are switched.
 #define PIN_POWER_MASK ((LOG_A0 ? (A0_POWER) : 0) | (LOG_A1 ? (A1_POWER) : 0) | \
-                        (LOG_A2 ? (A2_POWER) : 0) | (LOG_A3 ? (A3_POWER) : 0))
+                        (LOG_A2 ? (A2_POWER) : 0) | (LOG_A3 ? (A3_POWER) : 0) | \
+                        (LOG_HCSR04 ? (HCSR04_POWER) : 0))
 #define ANALOG_LOGGED_MASK ((LOG_A0 ? PIN_POWER_A0 : 0) | (LOG_A1 ? PIN_POWER_A1 : 0) | \
                             (LOG_A2 ? PIN_POWER_A2 : 0) | (LOG_A3 ? PIN_POWER_A3 : 0))
 #define PIN_POWER_MAX_(a,b) ((a) > (b) ? (a) : (b))
@@ -428,8 +478,9 @@ unsigned long readULong(char *str, int base=10);
 #define PIN_POWER_S1_ ((LOG_A1 && (A1_POWER)) ? (A1_SETTLE_MS) : 0)
 #define PIN_POWER_S2_ ((LOG_A2 && (A2_POWER)) ? (A2_SETTLE_MS) : 0)
 #define PIN_POWER_S3_ ((LOG_A3 && (A3_POWER)) ? (A3_SETTLE_MS) : 0)
-#define PIN_POWER_SETTLE_MS PIN_POWER_MAX_(PIN_POWER_MAX_(PIN_POWER_S0_, PIN_POWER_S1_), \
-                                           PIN_POWER_MAX_(PIN_POWER_S2_, PIN_POWER_S3_))
+#define PIN_POWER_SH_ (LOG_HCSR04 ? (HCSR04_SETTLE_MS) : 0)
+#define PIN_POWER_SETTLE_MS PIN_POWER_MAX_(PIN_POWER_MAX_(PIN_POWER_MAX_(PIN_POWER_S0_, PIN_POWER_S1_), \
+                                           PIN_POWER_MAX_(PIN_POWER_S2_, PIN_POWER_S3_)), PIN_POWER_SH_)
 
 // The power pins as text, built by the preprocessor so that reporting them costs
 // one flash string instead of a formatting routine: about 370 bytes less, on a
@@ -554,6 +605,7 @@ unsigned long readULong(char *str, int base=10);
 //       int  HDC1080 relative humidity (deci %)
 //       int  TMP119 temperature (centi°C)
 //       int  DS18B20 temperature (centi°C)
+//       int  HC-SR04P distance (cm)
 //       int  A0, A1, A2, A3 (mV)
 //
 // With the four original channels on and the rest off this reproduces the
@@ -564,7 +616,8 @@ unsigned long readULong(char *str, int base=10);
 #define OFF_HDC_RH    (OFF_HDC_TEMP + 2*LOG_HDC_TEMP)
 #define OFF_TMP119    (OFF_HDC_RH   + 2*LOG_HDC_RH)
 #define OFF_DS18B20   (OFF_TMP119   + 2*LOG_TMP119)
-#define OFF_A0        (OFF_DS18B20  + 2*LOG_DS18B20)
+#define OFF_DIST      (OFF_DS18B20  + 2*LOG_DS18B20)
+#define OFF_A0        (OFF_DIST     + 2*LOG_HCSR04)
 #define OFF_A1        (OFF_A0       + 2*LOG_A0)
 #define OFF_A2        (OFF_A1       + 2*LOG_A1)
 #define OFF_A3        (OFF_A2       + 2*LOG_A2)
@@ -577,7 +630,7 @@ unsigned long readULong(char *str, int base=10);
 // the fallback stride when the log in flash was written by a build whose record
 // size is unknown, so that a raw rescue dump cannot come up short.
 // A CONT record (LOG_FORMAT_CONT below) adds its milliseconds field to that.
-#define MAX_RECORD_BYTES (4 + CONT_MS_BYTES + 2*(4 + MAX_DS18B20 + 4))
+#define MAX_RECORD_BYTES (4 + CONT_MS_BYTES + 2*(4 + MAX_DS18B20 + 1 + 4))
 
 // Build signature: which channels this firmware writes, plus the version of the
 // encoding itself. Stored in EEPROM when the log starts and compared at every
@@ -604,7 +657,12 @@ unsigned long readULong(char *str, int base=10);
 // as zero, so signatures written before the count existed still match and no
 // spurious mismatch is reported.
 #define CH_DS_COUNT_SHIFT 9
-#define LOG_FORMAT_VERSION 1
+// The sixteen bits are all taken, so the distance channel is told by the VERSION:
+// 3 is the normal log with "Dist" after the DS18B20 columns, 4 the same in CONT.
+// It cannot share a log with A0..A3 (it uses their pins), so no channel bit is
+// lost. A reader that only knows versions 1 and 2 refuses such a log instead of
+// misreading it.
+#define LOG_FORMAT_VERSION (LOG_HCSR04 ? 3 : 1)
 #define LOG_SIGNATURE_NONE 0xFFFF
 
 #define LOG_SIGNATURE ((uint16_t)( ((uint16_t)LOG_FORMAT_VERSION<<12) \
@@ -625,7 +683,7 @@ unsigned long readULong(char *str, int base=10);
 // reader that only knows version 1 refuses the log instead of misaligning it,
 // and this build's own format check keeps normal logging suspended on a CONT
 // log until RC, so the two kinds of record never share a log.
-#define LOG_FORMAT_CONT 2
+#define LOG_FORMAT_CONT (LOG_HCSR04 ? 4 : 2)
 #define CONT_MS_BYTES 2
 #define LOG_SIGNATURE_CONT ((uint16_t)((LOG_SIGNATURE & 0x0FFF) | ((uint16_t)LOG_FORMAT_CONT<<12)))
 #define BYTES_PER_SAMPLE_CONT (BYTES_PER_SAMPLE + CONT_MS_BYTES)
@@ -856,6 +914,7 @@ bool messageSent=true;// Flag to know if the last message to be sent was actuall
 // offset can legitimately produce a small negative reading, so the sentinel has
 // to sit outside anything the 10-bit ADC could ever produce.
 #define INVALID_ANALOG -32768
+#define INVALID_DIST -32768
 #if IRIDIUM_INSTALLED == 1
   // Only the Iridium message builder reads or resets these
   int minTemp=INVALID_TEMP;
@@ -864,6 +923,9 @@ bool messageSent=true;// Flag to know if the last message to be sent was actuall
 int currentTemp=0;//temperature in centiºC
 int currentRH=0;// Relative humidity in deci %
 int currentTempHA=INVALID_TEMP_HA;// TMP119 temperature in centiºC
+#if LOG_HCSR04
+int currentDist=INVALID_DIST;    // HC-SR04P distance in cm
+#endif
 #if LOG_DS18B20
 int currentTempDS[LOG_DS18B20];  // one temperature in centiºC per sensor slot
 byte dsRom[LOG_DS18B20][8];      // ROM code bound to each slot, sorted by serial
@@ -874,6 +936,7 @@ bool ds18b20Extra=false;         // set if the bus holds more sensors than there
 // Calibrated H1 readings in mV, indexed by pin number 0..3. Entries for pins
 // that are switched off are never written or read.
 int currentAnalog[4]={INVALID_ANALOG,INVALID_ANALOG,INVALID_ANALOG,INVALID_ANALOG};
+#endif
 #if PIN_POWER_MASK
 // Switched sensor power (see PIN_POWER). Declared here and not in Power.ino
 // because setup(), loop() and the LIVE loop in EEPROM.ino all reach them, and
@@ -881,7 +944,6 @@ int currentAnalog[4]={INVALID_ANALOG,INVALID_ANALOG,INVALID_ANALOG,INVALID_ANALO
 unsigned long analogPowerOnAt=0; // millis() when the sensors were switched on
 bool analogPowerIsOn=false;
 byte analogPowerHold=0;          // >0 while a LIVE session keeps them on
-#endif
 #endif
 // Set by checkLogFormat() when the log in flash was written by a build with a
 // different set of channels. Blocks further logging while SUSPEND_ON_FORMAT_MISMATCH.
@@ -965,7 +1027,7 @@ bool logFormatMismatch=false;
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.16"
+#define FIRMWARE_VERSION "3.17"
 #define PROTOCOL_VERSION 8
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -1124,6 +1186,7 @@ unsigned int sensorErrCount __attribute__((section(".noinit")));
 #define ERR_HDC_READ     6  // HDC1080: lectura incompleta
 #define ERR_DS18B20      7  // DS18B20: sonda ausente, bus ocupado o CRC malo
 #define ERR_FLASH_WRITE  8  // la flash no acepto el registro
+#define ERR_HCSR04       9  // HC-SR04P: volvieron menos de HCSR04_MIN_VALID ecos
 
 // Intentos por lectura de un sensor I2C antes de darla por perdida.
 #define SENSOR_TRIES 3

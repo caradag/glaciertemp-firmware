@@ -121,6 +121,9 @@ void powerManagementSetup() {
     pinMode(A3, INPUT);
     digitalWrite(A3, LOW);
   #endif
+  #if LOG_HCSR04
+    hcsr04PinsIdle();     // trigger and echo LOW while the sensor is unpowered
+  #endif
   #if ANALOG_CHANNELS
     // Enabled header pins: plain high impedance inputs, pull-up off.
     #if LOG_A0
@@ -216,7 +219,9 @@ void printPinPowerOf(byte pin){
 }
 
 // Start-up line: which channels are switched, and from which pins.
+// The HC-SR04P is listed apart: it is not an analog channel.
 void printPinPowerConfig(){
+#if ANALOG_CHANNELS
   for(byte pin=0;pin<4;pin++){
     if(analogPinPower(pin)){
       out << F("Power for") << analogPinName(pin) << ':';
@@ -224,6 +229,10 @@ void printPinPowerConfig(){
       out << NL;
     }
   }
+#endif
+#if LOG_HCSR04
+  out << F("HC-SR04P: echo A0, trig A1, power A2 A3,") << (unsigned int)PIN_POWER_SETTLE_MS << F("ms\n");
+#endif
 }
 #endif
 
@@ -234,6 +243,9 @@ void goToSleep(){
   // Whatever happened while awake, a switched sensor never sleeps powered.
   analogPowerHold=0;
   analogPowerOff();
+#endif
+#if LOG_HCSR04
+  hcsr04PinsIdle();       // the echo may still be an input after a LIVE session
 #endif
   // Allow wake up pin to trigger interrupt on low.
   attachInterrupt(digitalPinToInterrupt(WAKEUP_PIN), arduinoWakeUpCallback, LOW);

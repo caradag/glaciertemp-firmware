@@ -97,6 +97,10 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | **firmware 3.13, TMP119 + A0 alimentado desde A1+A2+A3 + CONT, LTO + timeout** | **30.908** | **95 %** | 930 B (45 %) |
 | firmware 3.16 por defecto (calibracion con el par completo, `A01=2>258`), LTO + timeout | 29.414 | 90 % | -- |
 | firmware 3.16, TMP119 + A0 alimentado desde A1+A2+A3 + CONT, LTO + timeout | 30.762 | 94 % | -- |
+| firmware 3.17 por defecto (sin HC-SR04), LTO + timeout | 29.408 | 90 % | 900 B (43 %) |
+| firmware 3.17, `LOG_HCSR04 1` (TMP119 + HDC1080 + CONT), LTO + timeout | 30.488 | 94 % | -- |
+| firmware 3.17, `LOG_HCSR04 1` + 3 DS18B20 + CONT | 33.338 | **102 %, no cabe** | -- |
+| firmware 3.17, `LOG_HCSR04 1` + 3 DS18B20, `CONT_CAPTURE 0` | 31.042 | 95 % | -- |
 
 **Ojo con las filas del 3.8 al 3.12: estan medidas SIN LTO.** Se pasaba `-DWIRE_TIMEOUT` por
 `compiler.*.extra_flags`, que es donde MiniCore pone `-flto`, y eso la apagaba: salen unos 2 kB
@@ -183,6 +187,39 @@ que los alimentan, el tiempo de espera y el nombre. Ver `GtfwDescriptor` en el s
   que hardware exige y que va a medir y con que pines.
 - `CFG` lo devuelve desde la placa (`CFG <hex>`), para comparar con lo que se va a subir.
 - Ocupa ~57-64 B de datos y ~150 B de codigo (+214 B por defecto).
+
+## Sensor de distancia ultrasonico HC-SR04P (LOG_HCSR04)
+
+`#define LOG_HCSR04 1` en el bloque de canales registra la distancia `Dist`, en cm, de un
+HC-SR04**P** (la variante de 3-5,5 V; el HC-SR04 clasico necesita 5 V y a los 3,3 V de la
+placa no mide bien). Usa los cuatro pines de H1:
+
+| Pin | Funcion |
+|---|---|
+| H1-1 = A0 | echo |
+| H1-2 = A1 | trigger |
+| H1-3 = A2, H1-4 = A3 | VCC del sensor, en paralelo, conmutado como en PIN_POWER |
+
+- Por eso `LOG_A0`..`LOG_A3` tienen que estar en 0 (si no, no compila). D3 no se usa a
+  proposito: una placa preparada para 1-Wire tiene ahi un pull-up de 4,7k que, con el sensor
+  apagado, lo alimentaria por su entrada de trigger (~0,5 mA para siempre). Mientras el logger
+  duerme, trigger y echo quedan en LOW.
+- Cada medicion dispara `HCSR04_PINGS` (5) pings y guarda la mediana de los que volvieron; con
+  menos de `HCSR04_MIN_VALID` (3) queda NaN y se anota el error 9. La espera desde el encendido
+  es `HCSR04_SETTLE_MS` (800 ms). Medido en el banco a 8 y a 150 cm: el sensor lee bien
+  desde unos 650 ms despues de encenderlo, a las dos distancias. Antes casi no responde, y los
+  ecos que vuelven son FALSOS (p. ej. 55 cm con el obstaculo a 8 cm) y pueden pasar la mediana:
+  eso daba los 80-100 cm con la primera version (200 ms). 800 = umbral + 20 %, por el frio.
+  No bajarla.
+- La distancia se corrige con la temperatura del aire recien medida (TMP119, o HDC1080):
+  331,3 + 0,606·T m/s. Sin eso, entre -10 y 20 °C el error es de 5 % (10 cm a 2 m). Exige
+  `LOG_TMP119` o `LOG_HDC_TEMP`.
+- El pulso se mide con `micros()` y no con `pulseIn()`, que a 7,3728 MHz convierte ciclos en
+  us con 7 en vez de 7,37 y daria todas las distancias 5 % largas.
+- **El log lleva otra version de formato**: los 16 bits de la firma ya estan ocupados, asi que
+  la distancia se indica con la version (3 = log normal con `Dist`, 4 = CONT con `Dist`),
+  despues de las columnas DS18B20. Un lector que solo conoce las versiones 1 y 2 (la app
+  anterior a 2.48, un `decode_logh.py` antiguo) rechaza ese log en vez de leerlo mal.
 
 ## Registro de datos
 

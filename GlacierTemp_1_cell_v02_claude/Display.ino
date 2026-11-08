@@ -20,6 +20,10 @@ void displayInfo(){
 #if LOG_DS18B20
   getDS18B20Temp();
 #endif
+#if LOG_HCSR04
+  analogPowerOn();
+  getDistance();
+#endif
 #if LOG_HDC_TEMP
   out << F("Temperature (HDC1080):");
   if(currentTemp==INVALID_TEMP){
@@ -56,6 +60,14 @@ void displayInfo(){
     out << F("NaN\n");
   }else{
     out << '\xB1' << currentRH << "%\n";
+  }
+#endif
+#if LOG_HCSR04
+  out << F("Distance (HC-SR04P):");
+  if(currentDist==INVALID_DIST){
+    out << F("NaN\n");
+  }else{
+    out << currentDist << F("cm\n");
   }
 #endif
 #if ANALOG_CHANNELS

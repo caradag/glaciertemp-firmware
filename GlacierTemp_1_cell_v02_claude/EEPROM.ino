@@ -240,6 +240,9 @@ __attribute__((noinline)) int readSensors(){
 #if LOG_DS18B20
   getDS18B20Temp();
 #endif
+#if LOG_HCSR04
+  getDistance();     // after the temperatures: it corrects with them
+#endif
   int battMv=getBatteryVoltage();
 #if ANALOG_CHANNELS
   readAnalogChannels();
@@ -270,6 +273,9 @@ void packRecord(byte* b, unsigned long t, int battMv){
 #endif
 #if LOG_DS18B20
   memcpy(b+OFF_DS18B20, currentTempDS, 2*LOG_DS18B20);
+#endif
+#if LOG_HCSR04
+  memcpy(b+OFF_DIST, &currentDist, 2);
 #endif
 #if LOG_A0
   memcpy(b+OFF_A0, &currentAnalog[0], 2);
@@ -365,6 +371,7 @@ bool takeMeasurement(){
 #define W_TEMPHA 8
 #define W_TEMPDS 8
 #define W_ANALOG 8
+#define W_DIST   6
 
 // Prints one column heading, padded to width in the aligned layout.
 //
@@ -468,6 +475,9 @@ void printLogHeader(bool compact){
     logHeaderRam(label, W_TEMPDS, compact);
   }
 #endif
+#if LOG_HCSR04
+  logHeader(F("Dist cm"), W_DIST,   compact);
+#endif
 #if LOG_A0
   logHeader(F(A0_NAME),   W_ANALOG, compact);
 #endif
@@ -528,6 +538,9 @@ void printLiveSample(int battMv){
   for(byte ds=0; ds<LOG_DS18B20; ds++){
     logField(currentTempDS[ds], currentTempDS[ds]==INVALID_TEMP, 2, W_TEMPDS, true, true);
   }
+#endif
+#if LOG_HCSR04
+  logField(currentDist, currentDist==INVALID_DIST, 0, W_DIST, false, true);
 #endif
 #if LOG_A0
   logField(currentAnalog[0], currentAnalog[0]==INVALID_ANALOG, 3, W_ANALOG, false, true);
@@ -693,6 +706,12 @@ void liveData(unsigned long periodMs){
       for(byte ds=0; ds<LOG_DS18B20; ds++){
         int t=flashReadInt(address+OFF_DS18B20+2*ds);
         logField(t, t==INVALID_TEMP, 2, W_TEMPDS, true, compact);
+      }
+#endif
+#if LOG_HCSR04
+      {
+        int d=flashReadInt(address+OFF_DIST);
+        logField(d, d==INVALID_DIST, 0, W_DIST, false, compact);
       }
 #endif
 #if LOG_A0

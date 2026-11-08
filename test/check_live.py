@@ -131,7 +131,9 @@ def main():
         # signo, asi que lo mas ancho es "-327.67": signo, cinco digitos y el punto.
         ANCHO_CAMPO = 1 + 1 + 5 + 1
         MAX_DS = 8                     # lo que cabe en los bits DS del LOG_SIGNATURE
-        canales = len([g for g, _ in cl if not g.startswith("LOG_DS")]) + MAX_DS
+        # LOG_HCSR04 no suma: usa los pines de A0..A3, que entonces no se registran, y una
+        # columna de distancia es mas corta que las cuatro analogicas que reemplaza.
+        canales = len([g for g, _ in cl if not g.startswith("LOG_DS") and g != "LOG_HCSR04"]) + MAX_DS
         peor = len("LIVE ") + len("2026-09-13 10:22:31") + canales * ANCHO_CAMPO + 1
         if peor > buffer:
             bad.append(f"la linea LIVE mas larga son {peor} B y el buffer tiene {buffer}: "

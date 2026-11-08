@@ -39,16 +39,20 @@ def layout(sig):
     """Channel list, record size and timestamp size implied by a 16-bit log signature.
 
     Version 1 is the normal log. Version 2 is a CONT capture: the same channels,
-    with a uint16 of milliseconds after the four bytes of seconds."""
+    with a uint16 of milliseconds after the four bytes of seconds. Versions 3 and 4
+    are 1 and 2 with the HC-SR04P distance ("Dist", cm) after the DS18B20 columns:
+    the sixteen bits are all taken, so the version is what says it is there."""
     ver = (sig >> 12) & 0x0F
-    if ver not in (1, 2):
-        print(f"warning: signature 0x{sig:04X} has format version {ver}, expected 1 or 2",
+    if ver not in (1, 2, 3, 4):
+        print(f"warning: signature 0x{sig:04X} has format version {ver}, expected 1 to 4",
               file=sys.stderr)
-    ts = 6 if ver == 2 else 4
+    ts = 6 if ver in (2, 4) else 4
     fields = [(n, s, d) for n, b, s, d in CHANNELS if sig & b]
     if sig & DS_BIT:
         n_ds = ((sig & DS_MASK) >> DS_SHIFT) + 1
         fields += [(f"DS{i}", 100.0, 2) for i in range(n_ds)]
+    if ver in (3, 4):
+        fields += [("Dist", 1.0, 0)]
     fields += [(n, 1000.0, 3) for n, b in ANALOG if sig & b]
     return fields, ts + 2 * len(fields), ts
 

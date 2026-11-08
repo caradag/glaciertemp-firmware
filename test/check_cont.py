@@ -31,9 +31,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 SKETCH = HERE.parent / "GlacierTemp_1_cell_v02_claude"
 MAIN = "GlacierTemp_1_cell_v02_claude.ino"
 
-DEFINES = ["LOG_VOLTAGE", "LOG_HDC_TEMP", "LOG_HDC_RH", "LOG_TMP119", "LOG_DS18B20",
+DEFINES = ["LOG_VOLTAGE", "LOG_HDC_TEMP", "LOG_HDC_RH", "LOG_TMP119", "LOG_DS18B20", "LOG_HCSR04",
            "LOG_A0", "LOG_A1", "LOG_A2", "LOG_A3", "OFF_TIME", "OFF_VOLTAGE",
-           "OFF_HDC_TEMP", "OFF_HDC_RH", "OFF_TMP119", "OFF_DS18B20", "OFF_A0", "OFF_A1",
+           "OFF_HDC_TEMP", "OFF_HDC_RH", "OFF_TMP119", "OFF_DS18B20", "OFF_DIST", "OFF_A0", "OFF_A1",
            "OFF_A2", "OFF_A3", "BYTES_PER_SAMPLE", "CONT_MS_BYTES",
            "BYTES_PER_SAMPLE_CONT", "COUNT_ADDR", "COUNTERS_SLOTS", "COUNT_RESET_ADDR"]
 
@@ -52,6 +52,7 @@ uint32_t getULong(int a){ uint32_t v; memcpy(&v, eeprom+a, 4); return v; }
 int16_t currentTemp=-1234, currentRH=873, currentTempHA=-567;
 int16_t currentTempDS[8]={2101,2202,2303,2404,2505,2606,2707,2808};
 int16_t currentAnalog[4]={1500,1600,1700,1800};
+int16_t currentDist=321;
 uint32_t currentTime=0;
 """
 
@@ -119,7 +120,7 @@ def decoder():
 def flags():
     src = (SKETCH / MAIN).read_text(encoding="utf-8")
     val = {}
-    for d in ("LOG_VOLTAGE", "LOG_HDC_TEMP", "LOG_HDC_RH", "LOG_TMP119", "LOG_DS18B20",
+    for d in ("LOG_VOLTAGE", "LOG_HDC_TEMP", "LOG_HDC_RH", "LOG_TMP119", "LOG_DS18B20", "LOG_HCSR04",
               "LOG_A0", "LOG_A1", "LOG_A2", "LOG_A3"):
         val[d] = int(re.search(r"^#define\s+" + d + r"\s+(\d+)", src, re.M).group(1))
     return val
@@ -127,7 +128,7 @@ def flags():
 
 def registro(bad, salida):
     f = flags()
-    sig = 0x2000
+    sig = 0x4000 if f["LOG_HCSR04"] else 0x2000     # CONT: version 4 con distancia, 2 sin ella
     for d, b in (("LOG_VOLTAGE", 1), ("LOG_HDC_TEMP", 2), ("LOG_HDC_RH", 4), ("LOG_TMP119", 8),
                  ("LOG_A0", 0x20), ("LOG_A1", 0x40), ("LOG_A2", 0x80), ("LOG_A3", 0x100)):
         if f[d]:
@@ -148,7 +149,7 @@ def registro(bad, salida):
     if int.from_bytes(rec[4:6], "little") != 45:
         bad.append("los milisegundos no estan en los bytes 4..5")
     esperado = {"Volt": 1503, "Temp": -1234, "RH": 873, "HAtemp": -567,
-                "A0": 1500, "A1": 1600, "A2": 1700, "A3": 1800}
+                "A0": 1500, "A1": 1600, "A2": 1700, "A3": 1800, "Dist": 321}
     for i in range(8):
         esperado[f"DS{i}"] = 2101 + 101 * i
     for i, (name, _, _) in enumerate(fields):
