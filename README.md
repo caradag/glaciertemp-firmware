@@ -111,6 +111,7 @@ cabe se descubre al final de una tanda de cambios y no al principio.
 | firmware 3.17 por defecto (sin HC-SR04), LTO + timeout | 29.408 | 90 % | 900 B (43 %) |
 | firmware 3.17, `LOG_HCSR04 1` (TMP119 + HDC1080 + CONT), LTO + timeout | 30.488 | 94 % | -- |
 | firmware 3.18, `LOG_HCSR04 1` (distancia solo en I, con puntos de progreso) | 30.680 | 94 % | -- |
+| firmware 3.19, `LOG_HCSR04 1` (distancia en mm, media recortada de 5 pings) | 30.762 | 94 % | -- |
 | firmware 3.17, `LOG_HCSR04 1` + 3 DS18B20 + CONT | 33.338 | **102 %, no cabe** | -- |
 | firmware 3.17, `LOG_HCSR04 1` + 3 DS18B20, `CONT_CAPTURE 0` | 31.042 | 95 % | -- |
 
@@ -202,7 +203,7 @@ que los alimentan, el tiempo de espera y el nombre. Ver `GtfwDescriptor` en el s
 
 ## Sensor de distancia ultrasonico HC-SR04P (LOG_HCSR04)
 
-`#define LOG_HCSR04 1` (seccion 2.5 del encabezado del .ino) registra la distancia `Dist`, en cm, de un
+`#define LOG_HCSR04 1` (seccion 2.5 del encabezado del .ino) registra la distancia `Dist`, en mm (en cm hasta 3.18), de un
 HC-SR04**P** (la variante de 3-5,5 V; el HC-SR04 clasico necesita 5 V y a los 3,3 V de la
 placa no mide bien). Usa los cuatro pines de H1:
 
@@ -216,8 +217,11 @@ placa no mide bien). Usa los cuatro pines de H1:
   proposito: una placa preparada para 1-Wire tiene ahi un pull-up de 4,7k que, con el sensor
   apagado, lo alimentaria por su entrada de trigger (~0,5 mA para siempre). Mientras el logger
   duerme, trigger y echo quedan en LOW.
-- Cada medicion dispara `HCSR04_PINGS` (5) pings y guarda la mediana de los que volvieron; con
-  menos de `HCSR04_MIN_VALID` (3) queda NaN y se anota el error 9. La espera desde el encendido
+- Cada medicion dispara `HCSR04_PINGS` (5) pings y guarda la **media recortada** de los que
+  volvieron: descarta el eco mas corto y el mas largo y promedia el resto (desde 3.19; antes,
+  la mediana). Ignora un valor atipico igual que la mediana y ademas promedia el ruido del
+  sensor y el paso de `micros()` (8,7 us a 7,3728 MHz, ~1,5 mm), asi que el milimetro tiene
+  sentido. Con menos de `HCSR04_MIN_VALID` (3) queda NaN y se anota el error 9. La espera desde el encendido
   es `HCSR04_SETTLE_MS` (800 ms). Medido en el banco a 8 y a 150 cm: el sensor lee bien
   desde unos 650 ms despues de encenderlo, a las dos distancias. Antes casi no responde, y los
   ecos que vuelven son FALSOS (p. ej. 55 cm con el obstaculo a 8 cm) y pueden pasar la mediana:
@@ -227,16 +231,19 @@ placa no mide bien). Usa los cuatro pines de H1:
   el sensor necesita 800 ms desde que se enciende. En 3.17 iba tambien en el arranque y dejaba
   ~1,1 s de silencio a mitad del bloque; la app, que da por terminada una respuesta tras
   400-800 ms sin datos, decia que la placa no contestaba. En I se imprime un punto cada ~200 ms
-  mientras espera y uno por ping ("Distance (HC-SR04P):........ 152cm"), por la misma razon.
+  mientras espera y uno por ping ("Distance (HC-SR04P):........ 1523mm"), por la misma razon.
 - La distancia se corrige con la temperatura del aire recien medida (TMP119, o HDC1080):
   331,3 + 0,606·T m/s. Sin eso, entre -10 y 20 °C el error es de 5 % (10 cm a 2 m). Exige
   `LOG_TMP119` o `LOG_HDC_TEMP`.
 - El pulso se mide con `micros()` y no con `pulseIn()`, que a 7,3728 MHz convierte ciclos en
   us con 7 en vez de 7,37 y daria todas las distancias 5 % largas.
 - **El log lleva otra version de formato**: los 16 bits de la firma ya estan ocupados, asi que
-  la distancia se indica con la version (3 = log normal con `Dist`, 4 = CONT con `Dist`),
-  despues de las columnas DS18B20. Un lector que solo conoce las versiones 1 y 2 (la app
-  anterior a 2.48, un `decode_logh.py` antiguo) rechaza ese log en vez de leerlo mal.
+  la distancia se indica con la version (5 = log normal con `Dist` en mm, 6 = CONT con `Dist`
+  en mm), despues de las columnas DS18B20. Las versiones 3 y 4 son lo mismo con `Dist` en cm
+  (firmware 3.17 y 3.18): al cambiar la unidad tenia que cambiar la version. Un lector que no
+  conoce una version (la app anterior a 2.49, un `decode_logh.py` antiguo) rechaza ese log en
+  vez de leerlo con la unidad equivocada; la app 2.49 y `decode_logh.py` dan la columna
+  siempre en mm (un log en cm se multiplica por 10).
 
 ## Registro de datos
 

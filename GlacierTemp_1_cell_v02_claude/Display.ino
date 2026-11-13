@@ -129,7 +129,7 @@ void displayExtendedInfo(){
   if(currentDist==INVALID_DIST){
     out << F("NaN\n");
   }else{
-    out << currentDist << F("cm\n");
+    out << currentDist << F("mm\n");
   }
 #endif
 

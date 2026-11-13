@@ -42,7 +42,7 @@ unsigned long hcsr04Ping(){
   return micros()-t0;
 }
 
-// Reads the distance into currentDist (cm), or INVALID_DIST. Must run after the
+// Reads the distance into currentDist (mm), or INVALID_DIST. Must run after the
 // temperature sensors: it uses the temperature they just read.
 //
 // progress: for the I command and the startup banner. The sensor needs 800 ms
@@ -69,7 +69,7 @@ void getDistance(bool progress){
       out << '.';
     }
     if(us>0){
-      // insertion in order: the median is then the middle element
+      // insertion in order: the extremes are then the first and the last
       byte j=n++;
       while(j>0 && t[j-1]>us){
         t[j]=t[j-1];
@@ -105,8 +105,20 @@ void getDistance(bool progress){
   }
 #endif
   unsigned long c10=3313+(606L*tc)/10000;
-  // distance = time * speed / 2; us * (0.1 m/s) / 2 -> cm: divide by 200000, rounded
-  currentDist=(int)((t[n/2]*c10+100000UL)/200000UL);
+  // Trimmed mean (since 3.19): the shortest and the longest echo are dropped
+  // and the rest averaged. Like the median it ignores an outlier, and the
+  // average also smooths the ~1.5 mm step of micros() (8.7 us at 7.3728 MHz)
+  // and the sensor's own jitter, so the millimetre is worth storing. With 3
+  // valid echoes it is the median.
+  unsigned long sum=0;
+  byte k=0;
+  for(byte i=1; i+1<n; i++){
+    sum+=t[i];
+    k++;
+  }
+  // distance = time * speed / 2; us * (0.1 m/s) / 2 -> mm: divide by 20000,
+  // rounded. sum*c10 <= 3*30000*3600 < 2^32.
+  currentDist=(int)((sum*c10+10000UL*k)/(20000UL*k));
 }
 
 #endif // LOG_HCSR04

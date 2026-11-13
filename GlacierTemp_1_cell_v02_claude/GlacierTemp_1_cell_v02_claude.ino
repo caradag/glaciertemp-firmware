@@ -19,7 +19,7 @@
 // solo sube cuando cambia lo que un cliente automatico ve -- los comandos, sus
 // respuestas o el formato de LOGB. La app comprueba la segunda y se niega a hablar
 // con un protocolo que no entiende, en vez de malinterpretar la respuesta.
-#define FIRMWARE_VERSION "3.18"
+#define FIRMWARE_VERSION "3.19"
 #define PROTOCOL_VERSION 8
 
 // Identidad del HARDWARE, que no tiene nada que ver con FIRMWARE_VERSION. Juntas forman
@@ -198,7 +198,7 @@
 //==============================================================================
 //==  2.5  HC-SR04P -- distancia por ultrasonido en el header H1
 //==============================================================================
-#define LOG_HCSR04    0   // HC-SR04P ultrasonic distance ("Dist"), cm, on the four H1 pins. Parametros en este bloque.
+#define LOG_HCSR04    0   // HC-SR04P ultrasonic distance ("Dist"), mm, on the four H1 pins. Parametros en este bloque.
 
 // The 3.3 V variant (HC-SR04P, 3-5.5 V). The classic HC-SR04 needs 5 V and does
 // not range reliably on this board's 3.3 V.
@@ -220,7 +220,9 @@
 // m/s. Without that, -10 C against 20 C is a 5 % error, 10 cm at 2 m. One of the
 // two temperature channels must therefore be logged.
 //
-// Stored as an int, in cm. A ping that never returns (nothing within ~5 m, or a
+// Stored as an int, in mm (cm until 3.18; the log format version tells them
+// apart): the trimmed mean of the echoes that came back, the shortest and the
+// longest dropped. A ping that never returns (nothing within ~5 m, or a
 // target that scatters the sound away) does not count; if fewer than
 // HCSR04_MIN_VALID came back the record holds NaN and ERR_HCSR04 is noted.
 // (echo A0 = PC0 and trigger A1 = PC1 are used by port bit in HCSR04.ino)
@@ -516,7 +518,7 @@
 //       int  HDC1080 relative humidity (deci %)
 //       int  TMP119 temperature (centi°C)
 //       int  DS18B20 temperature (centi°C)
-//       int  HC-SR04P distance (cm)
+//       int  HC-SR04P distance (mm; cm in format versions 3 and 4)
 //       int  A0, A1, A2, A3 (mV)
 //
 // With the four original channels on and the rest off this reproduces the
@@ -569,11 +571,12 @@
 // spurious mismatch is reported.
 #define CH_DS_COUNT_SHIFT 9
 // The sixteen bits are all taken, so the distance channel is told by the VERSION:
-// 3 is the normal log with "Dist" after the DS18B20 columns, 4 the same in CONT.
-// It cannot share a log with A0..A3 (it uses their pins), so no channel bit is
-// lost. A reader that only knows versions 1 and 2 refuses such a log instead of
-// misreading it.
-#define LOG_FORMAT_VERSION (LOG_HCSR04 ? 3 : 1)
+// 5 is the normal log with "Dist" in mm after the DS18B20 columns, 6 the same in
+// CONT. Versions 3 and 4 were the same with "Dist" in cm (3.17, 3.18): the unit
+// changed, so the version had to change too. It cannot share a log with A0..A3
+// (it uses their pins), so no channel bit is lost. A reader that does not know a
+// version refuses the log instead of misreading it.
+#define LOG_FORMAT_VERSION (LOG_HCSR04 ? 5 : 1)
 #define LOG_SIGNATURE_NONE 0xFFFF
 
 #define LOG_SIGNATURE ((uint16_t)( ((uint16_t)LOG_FORMAT_VERSION<<12) \
@@ -594,7 +597,7 @@
 // reader that only knows version 1 refuses the log instead of misaligning it,
 // and this build's own format check keeps normal logging suspended on a CONT
 // log until RC, so the two kinds of record never share a log.
-#define LOG_FORMAT_CONT (LOG_HCSR04 ? 4 : 2)
+#define LOG_FORMAT_CONT (LOG_HCSR04 ? 6 : 2)
 #define CONT_MS_BYTES 2
 #define LOG_SIGNATURE_CONT ((uint16_t)((LOG_SIGNATURE & 0x0FFF) | ((uint16_t)LOG_FORMAT_CONT<<12)))
 #define BYTES_PER_SAMPLE_CONT (BYTES_PER_SAMPLE + CONT_MS_BYTES)
@@ -1025,7 +1028,7 @@ int currentTemp=0;//temperature in centiºC
 int currentRH=0;// Relative humidity in deci %
 int currentTempHA=INVALID_TEMP_HA;// TMP119 temperature in centiºC
 #if LOG_HCSR04
-int currentDist=INVALID_DIST;    // HC-SR04P distance in cm
+int currentDist=INVALID_DIST;    // HC-SR04P distance in mm
 #endif
 #if LOG_DS18B20
 int currentTempDS[LOG_DS18B20];  // one temperature in centiºC per sensor slot

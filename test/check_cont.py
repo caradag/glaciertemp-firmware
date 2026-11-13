@@ -128,7 +128,7 @@ def flags():
 
 def registro(bad, salida):
     f = flags()
-    sig = 0x4000 if f["LOG_HCSR04"] else 0x2000     # CONT: version 4 con distancia, 2 sin ella
+    sig = 0x6000 if f["LOG_HCSR04"] else 0x2000     # CONT: version 6 con distancia (mm), 2 sin ella
     for d, b in (("LOG_VOLTAGE", 1), ("LOG_HDC_TEMP", 2), ("LOG_HDC_RH", 4), ("LOG_TMP119", 8),
                  ("LOG_A0", 0x20), ("LOG_A1", 0x40), ("LOG_A2", 0x80), ("LOG_A3", 0x100)):
         if f[d]:

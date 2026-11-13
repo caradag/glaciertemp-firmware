@@ -476,7 +476,7 @@ void printLogHeader(bool compact){
   }
 #endif
 #if LOG_HCSR04
-  logHeader(F("Dist cm"), W_DIST,   compact);
+  logHeader(F("Dist mm"), W_DIST,   compact);
 #endif
 #if LOG_A0
   logHeader(F(A0_NAME),   W_ANALOG, compact);
